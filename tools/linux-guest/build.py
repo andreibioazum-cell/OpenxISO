@@ -289,15 +289,19 @@ def collect(kernel_dir, out_dir, keep_cpio=False):
         shutil.copy2(cpio, out_dir / (NAME + ".initramfs.cpio"))
     shutil.copy2(kernel_dir / ".config", out_dir / (NAME + ".config"))
 
-    files = sorted(path for path in out_dir.glob(NAME + ".*"))
+    files = sorted(path for path in out_dir.glob(NAME + ".*")
+                   if path.name != NAME + ".manifest")
     manifest = [
         "OpenxISO 64-bit Linux guest image",
         "=================================",
         "",
         "kernel:    Linux %s (x86-64), from %s" % (KERNEL_VERSION, KERNEL_URL),
-        "userland:  BusyBox %s (static, glibc), from %s" % (BUSYBOX_VERSION, BUSYBOX_URL),
+        "userland:  BusyBox %s (static, glibc) plus beep (see tools/linux-guest/beep.c),"
+            % BUSYBOX_VERSION,
+        "           from %s" % BUSYBOX_URL,
         "config:    tools/linux-guest/config.fragment, resolved with make syncconfig",
-        "patches:   tools/linux-guest/patches.py (build environment only)",
+        "patches:   tools/linux-guest/patches.py (sources touched: Makefile,",
+        "           scripts/Makefile.lib, arch/x86/Kconfig; build environment only)",
         "engine:    emulator/vendor/v86_64, booted through the Linux boot protocol",
         "cmdline:   %s" % CMDLINE,
         "",

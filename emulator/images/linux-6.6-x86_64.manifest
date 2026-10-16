@@ -2,7 +2,8 @@ OpenxISO 64-bit Linux guest image
 =================================
 
 kernel:    Linux 6.6 (x86-64), from https://codeload.github.com/torvalds/linux/tar.gz/refs/tags/v6.6
-userland:  BusyBox 1.36.1 (static, glibc) plus beep (see beep.c), from https://codeload.github.com/mirror/busybox/tar.gz/refs/tags/1_36_1
+userland:  BusyBox 1.36.1 (static, glibc) plus beep (see tools/linux-guest/beep.c),
+           from https://codeload.github.com/mirror/busybox/tar.gz/refs/tags/1_36_1
 config:    tools/linux-guest/config.fragment, resolved with make syncconfig
 patches:   tools/linux-guest/patches.py (sources touched: Makefile,
            scripts/Makefile.lib, arch/x86/Kconfig; build environment only)
