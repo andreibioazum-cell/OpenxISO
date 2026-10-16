@@ -2,6 +2,8 @@
 #define NET_H
 #ifdef __ANDROID__
 #include <jni.h>
+#else
+typedef struct _JavaVM JavaVM;     /* web/desktop: заглушка вместо <jni.h> */
 #endif
 
 #define NET_SLOTS 4
@@ -49,8 +51,10 @@
 #define NET_PASS_SECRET_1 "\022\020\154\063\017\054\061\027\025\055\024\062"
 #define NET_PASS_SECRET_2 "\021\021\024\025\064\066\055\071"
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__)
 void net_set_java_vm(JavaVM *vm);
+#elif defined(__EMSCRIPTEN__)
+void net_set_java_vm(void *vm);
 #endif
 
 void net_connect(const char *url, const char *room);

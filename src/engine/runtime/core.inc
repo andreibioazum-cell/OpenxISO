@@ -1,7 +1,16 @@
 #include "engine/runtime.h"
 #include <stdarg.h>
 #include <stdio.h>
+#ifdef __EMSCRIPTEN__
+/* Однопоточный WASM: pthread/android/nanosleep даём в собственном <pthread.h>,
+ * который лежит в src/platform/web/sysroot и подкладывается через -I в сборке.
+ * Так не нужен -s USE_PTHREADS и liblog. */
 #include <pthread.h>
+#include <math.h>
+#else
+#include <pthread.h>
+#include <math.h>
+#endif
 #include <time.h>
 #define DS_ERROR_MESSAGE_SIZE 1024
 #define DS_CONSOLE_MAX 256
@@ -92,7 +101,12 @@ static DSStringNode *ds_strings = NULL;
  * освобождаются. */
 static unsigned long ds_string_gen = 0;
 static void platform_log(int is_error, const char *format, va_list args) {
+#ifdef __EMSCRIPTEN__
+    vfprintf(is_error ? stderr : stdout, format, args);
+    fprintf(is_error ? stderr : stdout, "\n");
+#else
     __android_log_vprint(is_error ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "CubicBattle", format, args);
+#endif
 }
 void ds_log(const char *format, ...) {
     char tmp[DS_CONSOLE_LINE_MAX];

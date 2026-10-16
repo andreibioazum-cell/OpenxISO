@@ -157,3 +157,47 @@ jobs:
           name: Cubic-Battle-4-Full-C-APK
           path: Game.apk
           if-no-files-found: error
+
+  build-web:
+    name: Build WebAssembly (desktop + телефоны, один index.html)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.70
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify emcc
+        run: emcc --version
+
+      - name: Build WASM (одна сборка, один index.html — работает и на десктопе, и на телефонах)
+        run: |
+          set -uo pipefail
+          mkdir -p build/web
+          emcc src/platform/web/web_main.c \
+            -Isrc -Isrc/platform/web/sysroot -I. \
+            -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s NO_EXIT_RUNTIME=1 \
+            -s "EXPORTED_RUNTIME_METHODS=['UTF8ToString','HEAP8','ccall','cwrap']" \
+            -s INVOKE_RUN=1 \
+            --shell-file build/web/shell.html \
+            --preload-file assets@/assets \
+            -o build/web/cb4.html -O2 2>&1 | tee build/web/build.log
+          if [ ! -f build/web/cb4.html ]; then
+            echo "::group::build log"; cat build/web/build.log; echo "::endgroup::"; exit 1;
+          fi
+          cp build/web/cb4.html build/web/index.html
+
+      - name: List outputs
+        run: ls -la build/web/
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Cubic-Battle-4-Web
+          path: |
+            build/web/
+          if-no-files-found: ignore

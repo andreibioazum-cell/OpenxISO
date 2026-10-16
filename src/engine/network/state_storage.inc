@@ -7,8 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef __EMSCRIPTEN__
+/* pthread/android-log shims лежат в src/platform/web/sysroot. */
+#include <pthread.h>
+#else
 #include <pthread.h>
 #include <unistd.h>
+#endif
 #include <android/log.h>
 #define LOG(...)                                                                                                       \
     do {                                                                                                               \

@@ -1,4 +1,7 @@
 /* Сетевая подсистема и локальные сохранения. */
+#ifdef __EMSCRIPTEN__
+#include "platform/web/network_web.inc"
+#else
 #include "engine/network/state_storage.inc"
 #include "engine/network/write_secret.inc"
 #include "engine/network/cloud_patch.inc"
@@ -23,3 +26,4 @@
 #include "engine/network/room_chat.inc"
 #include "engine/network/room_threads.inc"
 #include "engine/network/player_api.inc"
+#endif
