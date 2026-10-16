@@ -100,6 +100,8 @@ export class Machine {
         this.emulator = null;
         this.buffers = {};
         this.status = "stopped";
+        /** True while a reset is power cycling the machine. */
+        this.restarting = false;
         this.error = null;
         this.started_at = 0;
         this.total_read = 0;
@@ -265,6 +267,12 @@ export class Machine {
         });
         emulator.add_listener("emulator-started", () => emit("started"));
         emulator.add_listener("emulator-stopped", () => {
+            // v86 says this when it is destroyed, so it also arrives while a
+            // reset is switching the machine off and on again: the app must
+            // not be told then, it would drop the machine it still has
+            if (this.restarting) {
+                return;
+            }
             this.status = "stopped";
             emit("state", this.status);
         });
@@ -286,22 +294,30 @@ export class Machine {
     /**
      * Stop the emulator. The guest is not asked to shut down, exactly like
      * pulling the plug.
+     *
+     * @param {{for_restart?: boolean}=} options for_restart keeps the machine
+     *   in the "starting" state and stays quiet about the shutdown: the app
+     *   still has a running machine, it is only switching it off and on again.
      */
-    async stop() {
+    async stop(options = {}) {
         const emulator = this.emulator;
         if (!emulator) {
             return;
         }
         this.emulator = null;
         this.buffers = {};
-        this.status = "stopped";
+        if (!options.for_restart) {
+            this.status = "stopped";
+        }
 
         try {
             await emulator.destroy();
         } catch (error) {
             console.warn("while destroying the emulator:", error);
         }
-        this.on_event("state", this.status);
+        if (!options.for_restart) {
+            this.on_event("state", this.status);
+        }
     }
 
     /**
@@ -323,8 +339,19 @@ export class Machine {
         if (!this.emulator) {
             throw new EngineError("the machine is not running");
         }
-        await this.stop();
-        await this.start();
+        // the machine stays the running machine of the app across the power
+        // cycle, so the shutdown is not announced as one: the app would
+        // otherwise let go of the machine and keep showing it as switched off
+        // while the guest boots again in the background
+        this.status = "starting";
+        this.restarting = true;
+        this.on_event("state", this.status);
+        try {
+            await this.stop({ for_restart: true });
+            await this.start();
+        } finally {
+            this.restarting = false;
+        }
     }
 
     pause() {

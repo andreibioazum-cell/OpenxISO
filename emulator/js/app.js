@@ -416,6 +416,9 @@ async function reset_machine() {
     }
     try {
         await state.machine.reset();
+        // the machine stays the same across the power cycle, but the status
+        // bar has seen the states in between: repaint it from here
+        update_status();
         toast("Гостевая система перезагружается");
     } catch (error) {
         console.error("cannot reset the machine:", error);

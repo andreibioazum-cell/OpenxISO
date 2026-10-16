@@ -159,7 +159,9 @@ python3 tools/linux-guest/build.py    # Linux 6.6 + BusyBox 1.36.1, ~10 мину
 (`panicked at src/rust/cpu/cpu.rs: Unimplemented: #GP handler`). Поэтому кнопка
 «Сброс» в приложении делает цикл питания: останавливает машину и запускает её
 заново, гость поднимается так же, как при первом включении (проверяется в
-`linux_ui_test.mjs`).
+`linux_ui_test.mjs`). Машина при этом остаётся той же: приложение её не
+отпускает, статус проходит через «Запуск…» и «Загрузка…», а консоль COM1
+продолжает следить за гостем и после сброса.
 
 ## Движок
 
@@ -199,7 +201,7 @@ node emulator/tests/unit_test.mjs            # модули приложения
 node emulator/tests/boot_test.mjs            # загрузка ISO и .hdd в движке
 node emulator/tests/linux_test.mjs           # Linux 6.6: загрузка (из файла и с CD), COM1, диски, звук
 node emulator/tests/ui_test.mjs              # интерфейс в настоящем браузере
-node emulator/tests/linux_ui_test.mjs        # тот же Linux через приложение: клавиатура, звук, .hdd
+node emulator/tests/linux_ui_test.mjs        # тот же Linux через приложение: клавиатура, звук, .hdd, CD
 node emulator/tests/vga_debug.mjs            # экран гостя против его видеопамяти
 node emulator/tests/make_screenshots.mjs     # картинки для этого файла
 ```

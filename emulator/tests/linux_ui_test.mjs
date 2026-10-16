@@ -10,7 +10,11 @@
  * engine booting it through the Linux boot protocol, the emulated screen
  * showing the guest's own output, the click-to-capture mouse, the emulated
  * keyboard typing into the guest's console, the serial panel talking to the
- * guest's shell, and the audio devices being wired up.
+ * guest's shell, and the audio devices being wired up.  The bootable CD in
+ * emulator/images is then booted twice: once as a URL that the server streams
+ * with range requests, and once as a file picked out of the device's own
+ * storage with the system file picker, which is how a real ISO gets into the
+ * machine on a phone.
  *
  * Requirements:
  *   - the kernel image: emulator/images/linux-6.6-x86_64.bzImage
@@ -37,6 +41,7 @@ const repo = path.dirname(path.dirname(here));
 const require = createRequire(import.meta.url);
 
 const KERNEL = path.join(repo, "emulator", "images", "linux-6.6-x86_64.bzImage");
+const ISO = path.join(repo, "emulator", "images", "linux-6.6-x86_64.iso");
 
 function parse_args(argv) {
     const options = { headful: false, keep_open: false, port: 0, timeout: 240 };
@@ -134,6 +139,9 @@ async function main() {
 
     const launch_options = {
         headless: !options.headful,
+        // a running guest keeps the CPU busy, so the protocol calls need more
+        // room than the default 180 s
+        protocolTimeout: 600000,
         args: [
             "--no-sandbox",
             "--disable-dev-shm-usage",
@@ -368,7 +376,10 @@ async function main() {
         // booted through the Linux boot protocol, so the app does a power cycle
         // (see the limitations in emulator/README.md): the guest has to come up
         // again, on the same disk
-        const before = await page.evaluate(() => window.OpenxISO.serial_text().length);
+        // the transcript of the boot so far is thrown away, so that what comes
+        // back has to be a whole boot of its own (it also fails if the app lets
+        // go of the machine and the panel stops following the guest)
+        await page.evaluate(() => document.getElementById("serial-clear").click());
         await page.evaluate(() => document.getElementById("btn-reset").click());
         await page.waitForSelector("dialog.dialog", { visible: true });
         await page.evaluate(() => {
@@ -376,13 +387,10 @@ async function main() {
             const ok = buttons.find(button => button.textContent.trim() === "OK");
             (ok || buttons[buttons.length - 1]).click();
         });
-        const serial = await wait_for(page, "the guest to boot again", length_before => {
-            const all = window.OpenxISO.serial_text();
-            // the serial panel is not cleared on a restart, so look at what came
-            // after the click (and at everything if the panel was cleared)
-            const text = all.length > length_before ? all.slice(length_before) : all;
+        const serial = await wait_for(page, "the guest to boot again", () => {
+            const text = window.OpenxISO.serial_text();
             return /Disk:\s+\/dev\/sda, 64 MiB/.test(text) && /openxiso:~#/.test(text) ? text : false;
-        }, options.timeout * 1000, diagnose, before);
+        }, options.timeout * 1000, diagnose);
         assert.match(serial, /Run \/init as init process/,
             "the guest went through a whole boot again");
         assert.match(serial, /Disk:\s+\/dev\/sda, 64 MiB/, "the disk is still attached");
@@ -399,6 +407,13 @@ async function main() {
         const machine = await page.evaluate(() =>
             document.getElementById("status-machine").textContent);
         assert.match(machine, /Демонстрация/);
+
+        // the reset left that machine running, which is what the app should do;
+        // switch it off so the next checks are not competing with a guest for
+        // the CPU of the test machine
+        await page.evaluate(() => document.getElementById("btn-stop").click());
+        await wait_for(page, "the machine to stop",
+            () => (window.OpenxISO.state.machine ? false : true), 60000, diagnose);
     });
 
     await test("a CD boot starts the same Linux on a bare machine", async () => {
@@ -407,7 +422,7 @@ async function main() {
         // entry from it and the loader in that entry starts the kernel - no
         // kernel image and no command line are handed to the engine at all
         await page.goto(`http://127.0.0.1:${running.port}/emulator/index.html?nosw&demo=cd`,
-            { waitUntil: "domcontentloaded" });
+            { waitUntil: "domcontentloaded", timeout: 180000 });
         const media = await wait_for(page, "the CD to be attached", () => {
             // the machines of the earlier checks are still in the list, so
             // find the demo machine by the CD it carries
@@ -430,6 +445,64 @@ async function main() {
             "the kernel got the command line from the loader");
         assert.match(serial, /CD:     \/dev\/sr0 mounted on \/mnt\/cdrom/,
             "the guest mounted the CD it booted from");
+    });
+
+    await test("an ISO picked from the device boots the same loader", async () => {
+        // what a user does on a phone: instead of a URL, the disc is a file in
+        // the device's storage and goes in through the system file picker. The
+        // machine is switched off, the CD is replaced by that file, and it boots
+        // the file through the BIOS.
+        await page.evaluate(() => document.getElementById("btn-stop").click());
+        await wait_for(page, "the machine to stop",
+            () => (window.OpenxISO.state.machine ? false : true), 60000, diagnose);
+
+        // the power buttons follow the machine: the settings button only comes
+        // back once the stop has finished, so wait for it instead of clicking
+        // a disabled button
+        await wait_for(page, "the settings button to become available",
+            () => !document.getElementById("btn-settings").disabled, 60000, diagnose);
+        await page.evaluate(() => document.getElementById("btn-settings").click());
+        await page.waitForSelector("dialog.dialog", { visible: true });
+        // the settings dialog opens on the system page, the images live behind
+        // their own tab
+        await page.evaluate(() => {
+            document.querySelectorAll("dialog.dialog .tabbar .tab")[1].click();
+        });
+        await page.waitForSelector("dialog.dialog .media-list .media-details", { visible: true });
+
+        const [chooser] = await Promise.all([
+            page.waitForFileChooser({ timeout: 30000 }),
+            page.evaluate(() => {
+                const rows = document.querySelectorAll("dialog.dialog .media-list .media-details");
+                // the rows are the kernel, the CD, the two disks and the floppy
+                rows[1].querySelector(".media-buttons button").click();
+            }),
+        ]);
+        await chooser.accept([ISO]);
+
+        const reference = await wait_for(page, "the picked file to be attached", () => {
+            const machine = window.OpenxISO.state.machines.find(candidate =>
+                candidate.media.cdrom && candidate.media.cdrom.storage === "browser" &&
+                candidate.media.cdrom.name === "linux-6.6-x86_64.iso");
+            return machine ? { name: machine.media.cdrom.name, size: machine.media.cdrom.size } : false;
+        }, 60000, diagnose);
+        assert.equal(reference.size, fs.statSync(ISO).size,
+            "the whole file, not a copy that was cut short");
+
+        await page.$eval("dialog.dialog .dialog-footer .button.primary", button => button.click());
+        await page.waitForFunction(() => !document.querySelector("dialog.dialog"), { timeout: 15000 });
+
+        // the transcript of the previous boot would match the checks below, so
+        // it is thrown away before the machine is switched on again
+        await page.evaluate(() => document.getElementById("serial-clear").click());
+        await page.evaluate(() => document.getElementById("btn-start").click());
+        const serial = await wait_for(page, "the disc from the device to boot Linux",
+            () => window.OpenxISO.serial_text().includes("openxiso:~#") ?
+                window.OpenxISO.serial_text() : false, options.timeout * 1000, diagnose);
+        assert.match(serial, /openxiso linux boot loader/,
+            "the loader in the file's first block ran");
+        assert.match(serial, /CD:     \/dev\/sr0 mounted on \/mnt\/cdrom/,
+            "the guest boots and mounts the file it was given");
     });
 
     await test("no errors were logged to the console", () => {
