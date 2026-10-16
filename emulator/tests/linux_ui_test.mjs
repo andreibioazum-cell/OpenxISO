@@ -389,12 +389,47 @@ async function main() {
     });
 
     await test("the status bar follows the machine", async () => {
-        const status = await page.evaluate(() => ({
-            state: document.getElementById("status-state").textContent,
-            machine: document.getElementById("status-machine").textContent,
-        }));
-        assert.match(status.state, /Работает/);
-        assert.match(status.machine, /Демонстрация/);
+        // the status bar is repainted on a timer, so it can still show the
+        // state a reset went through; wait for it to catch up
+        const status = await wait_for(page, "the status bar to show the running machine", () => {
+            const state = document.getElementById("status-state").textContent;
+            return /Работает/.test(state) ? state : false;
+        }, 30000, diagnose);
+        assert.match(status, /Работает/);
+        const machine = await page.evaluate(() =>
+            document.getElementById("status-machine").textContent);
+        assert.match(machine, /Демонстрация/);
+    });
+
+    await test("a CD boot starts the same Linux on a bare machine", async () => {
+        // the app's own path for a CD: ?demo=cd attaches
+        // emulator/images/linux-6.6-x86_64.iso, SeaBIOS reads the El Torito
+        // entry from it and the loader in that entry starts the kernel - no
+        // kernel image and no command line are handed to the engine at all
+        await page.goto(`http://127.0.0.1:${running.port}/emulator/index.html?nosw&demo=cd`,
+            { waitUntil: "domcontentloaded" });
+        const media = await wait_for(page, "the CD to be attached", () => {
+            // the machines of the earlier checks are still in the list, so
+            // find the demo machine by the CD it carries
+            const machine = window.OpenxISO.state.machines.find(candidate =>
+                candidate.media.cdrom && candidate.media.cdrom.name === "linux-6.6-x86_64.iso");
+            if (!machine || !machine.media.kernel) {
+                return machine ? { name: machine.media.cdrom.name,
+                    storage: machine.media.cdrom.storage } : false;
+            }
+            return false;
+        }, 60000, diagnose);
+        assert.equal(media.name, "linux-6.6-x86_64.iso");
+        assert.equal(media.storage, "url", "the CD is streamed from the server");
+        const serial = await wait_for(page, "the CD to boot the kernel",
+            () => window.OpenxISO.serial_text().includes("openxiso:~#") ?
+                window.OpenxISO.serial_text() : false, options.timeout * 1000, diagnose);
+        assert.match(serial, /openxiso linux boot loader/,
+            "the loader in the CD's first block ran");
+        assert.match(serial, /Command line: .*console=ttyS0,115200 ro/,
+            "the kernel got the command line from the loader");
+        assert.match(serial, /CD:     \/dev\/sr0 mounted on \/mnt\/cdrom/,
+            "the guest mounted the CD it booted from");
     });
 
     await test("no errors were logged to the console", () => {

@@ -1268,11 +1268,13 @@ async function main() {
         }
     }
 
-    // ?demo=<url of an ISO or of a kernel> (or ?demo=1 / ?demo=gfx / ?demo=linux
-    // for the images that ship with the repository) creates a machine and boots
-    // it, which is handy for a quick look at the emulator without attaching
+    // ?demo=<url of an ISO or of a kernel> (or one of the names below, for the
+    // images that ship with the repository) creates a machine and boots it,
+    // which is handy for a quick look at the emulator without attaching
     // anything by hand.  ?demo=linux boots the real Linux guest image from
-    // emulator/images, which needs nothing else at all.
+    // emulator/images and needs nothing else at all; ?demo=cd boots the same
+    // Linux from the CD in that directory, through the BIOS, the way a real
+    // machine (and a real ISO from the user's device) boots it.
     const demo = new URLSearchParams(location.search).get("demo");
     if (demo !== null) {
         const images = {
@@ -1283,6 +1285,14 @@ async function main() {
             "gfx": { kind: "cdrom", file: "long-mode-gfx-test.iso" },
             "64": { kind: "kernel", dir: "images/", file: "linux-6.6-x86_64.bzImage" },
             "linux": { kind: "kernel", dir: "images/", file: "linux-6.6-x86_64.bzImage" },
+            // the CD that carries the same kernel: SeaBIOS reads the El Torito
+            // entry, the loader in it starts the kernel off the CD.  This is the
+            // way a real machine (and a real ISO from the user's device) boots,
+            // and it needs the memory the kernel decompresses into.
+            "cd": { kind: "cdrom", dir: "images/", file: "linux-6.6-x86_64.iso",
+                memory_mb: 256 },
+            "linux-iso": { kind: "cdrom", dir: "images/", file: "linux-6.6-x86_64.iso",
+                memory_mb: 256 },
         };
         const known = images[demo];
         const url = known
@@ -1299,6 +1309,10 @@ async function main() {
             // would be enough, but 512 MiB leaves room for a big initramfs
             machine.system.memory_mb = Math.max(machine.system.memory_mb, 512);
             machine.system.cmdline = DEFAULT_KERNEL_CMDLINE;
+        }
+        if (known && known.memory_mb) {
+            // a CD boot needs what the kernel decompresses into (init_size)
+            machine.system.memory_mb = Math.max(machine.system.memory_mb, known.memory_mb);
         }
         finalize_machine(machine, "Демонстрация");
         await save_machine(machine);

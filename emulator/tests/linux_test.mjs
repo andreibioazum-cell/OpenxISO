@@ -43,6 +43,7 @@ const DEFAULTS = {
     hda: null,
     cdrom: null,
     no_disks: false,
+    iso: path.join(here, "..", "images", "linux-6.6-x86_64.iso"),
 };
 
 /** Where make_test_images.py puts the images this test attaches by default. */
@@ -58,6 +59,10 @@ function parse_args(argv) {
             options.keep_vga = true;
         } else if (arg === "--no-disks") {
             options.no_disks = true;
+        } else if (arg === "--iso") {
+            options.iso = argv[++index];
+        } else if (arg === "--no-iso") {
+            options.iso = null;
         } else if (arg === "--kernel") {
             options.kernel = argv[++index];
         } else if (arg === "--cmdline") {
@@ -70,7 +75,7 @@ function parse_args(argv) {
             options.timeout = Number(argv[++index]);
         } else if (arg === "--help") {
             console.log("usage: linux_test.mjs [--kernel PATH] [--cmdline TEXT] [--timeout SECONDS]" +
-                " [--hda PATH] [--cdrom PATH] [--no-disks]");
+                " [--hda PATH] [--cdrom PATH] [--no-disks] [--iso PATH] [--no-iso]");
             process.exit(0);
         } else {
             console.error(`error: unknown option ${arg}`);
@@ -84,6 +89,11 @@ function parse_args(argv) {
 function test_image(name) {
     const candidate = path.join(TEST_IMAGES, name);
     return fs.existsSync(candidate) ? candidate : null;
+}
+
+/** An exact sized ArrayBuffer, which is what v86 takes for {buffer}. */
+function read_image(file) {
+    return new Uint8Array(fs.readFileSync(file)).buffer;
 }
 
 /** What the guest must print for the boot to count as complete. */
@@ -130,9 +140,6 @@ async function main() {
         options.hda = options.hda || test_image("long-mode-test.hdd");
         options.cdrom = options.cdrom || test_image("long-mode-test.iso");
     }
-
-    /** An exact sized ArrayBuffer, which is what v86 takes for {buffer}. */
-    const read_image = file => new Uint8Array(fs.readFileSync(file)).buffer;
 
     const label = name => (name + ":").padEnd(9);
     console.log(label("kernel") + `${options.kernel} (${kernel.length} bytes)`);
@@ -452,8 +459,102 @@ async function main() {
     }
 
     emulator.destroy();
+
+    await check_cd_image(kernel, options, check);
+
     console.log(failures ? `\n${failures} failed` : "\nall checks passed");
     process.exit(failures ? 1 : 0);
+}
+
+/*
+ * The CD boots the same kernel on a bare machine: no kernel image is handed to
+ * the engine at all, SeaBIOS reads the El Torito entry from the CD, the loader
+ * in its first block (tools/linux-guest/linuxboot.S) reads the kernel off the
+ * CD with INT 13h and enters it through the kernel's own real mode entry point,
+ * and the kernel does the rest.  The CD is emulator/images/linux-6.6-x86_64.iso,
+ * built by tools/linux-guest/mkiso.py.
+ */
+async function check_cd_image(kernel, options, check) {
+    if (!options.iso) {
+        console.log("\n(the CD is switched off: --no-iso)");
+        return;
+    }
+    if (!fs.existsSync(options.iso)) {
+        console.log(`\n(no CD at ${options.iso}: run tools/linux-guest/mkiso.py)`);
+        return;
+    }
+
+    console.log("\nbooting the CD on a bare machine (BIOS, El Torito, linuxboot.S)");
+    const { V86 } = await import(url.pathToFileURL(path.join(vendor, "libv86.mjs")).href);
+    const cd = new V86({
+        wasm_path: path.join(vendor, "v86.wasm"),
+        bios: { url: path.join(vendor, "seabios.bin") },
+        vga_bios: { url: path.join(vendor, "vgabios.bin") },
+        // no bzimage, no command line, no disk: the CD is the only thing the
+        // machine has, and everything the kernel gets comes from it
+        cdrom: { buffer: read_image(options.iso) },
+        memory_size: 256 * 1024 * 1024,
+        vga_memory_size: 8 * 1024 * 1024,
+        acpi: true,
+        autostart: true,
+    });
+
+    const log = [];
+    cd.add_listener("serial0-output-byte", byte => {
+        const char = String.fromCharCode(byte);
+        log.push(char);
+        if (options.verbose) {
+            process.stdout.write(char);
+        }
+    });
+
+    const output = () => log.join("").replace(/\r/g, "");
+    let booted = null;
+    const until = Date.now() + options.timeout * 1000;
+    while (Date.now() < until && !(booted = /openxiso:~#/.test(output()) ? output() : null)) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    cd.destroy();
+
+    await check("the CD boots on a bare machine (SeaBIOS, El Torito, linuxboot.S)", () => {
+        assert.ok(booted, `the guest never reached a shell; it said:\n${output().slice(-2000)}`);
+        assert.match(booted, /openxiso linux boot loader \(El Torito, no emulation\)/,
+            "the loader in the CD's first block ran");
+    });
+
+    await check("the loader reads the kernel image off the CD itself", () => {
+        // the loader parses the ISO (boot record, boot catalog) and prints what
+        // it found and how much of the image it moved into place
+        const found = /kernel at CD block ([0-9a-f]{8})/.exec(booted);
+        assert.ok(found, "the loader found the kernel in the ISO's boot catalog");
+        const sizes = /booting ([0-9a-f]{8}) blocks, ([0-9a-f]{8}) bytes/.exec(booted);
+        assert.ok(sizes, "the loader reported what it loaded");
+        assert.equal(parseInt(sizes[2], 16), kernel.length,
+            "it moved exactly the kernel image into the machine");
+        assert.equal(parseInt(sizes[1], 16), Math.ceil(kernel.length / 2048),
+            "the whole image, counted in the CD's 2048 byte blocks");
+    });
+
+    await check("the kernel the CD carries boots and runs the same userland", () => {
+        assert.match(booted, /Linux version 6\.6\.\d+/);
+        assert.match(booted, /Run \/init as init process/);
+        assert.match(booted, /OpenxISO guest: Linux 6\.6\.\d+ on x86_64/);
+        assert.match(booted, /openxiso:~#/);
+        assert.doesNotMatch(booted, /Kernel panic|not syncing/);
+    });
+
+    await check("the kernel got the command line from the loader", () => {
+        // the loader passes "ro" on top of what the emulator's own kernel boot
+        // passes, and the kernel prints the line it was given: seeing it here
+        // means this boot really went through the CD and not through the page
+        assert.match(booted, /Command line: .*console=ttyS0,115200 ro/);
+    });
+
+    await check("the guest mounts the CD it booted from", () => {
+        assert.match(booted, /CD:     \/dev\/sr0 mounted on \/mnt\/cdrom, contains:/);
+        assert.match(booted, /linux\.bin openxiso\.img readme\.txt/,
+            "the files the ISO carries are in the mounted CD");
+    });
 }
 
 main().catch(error => {

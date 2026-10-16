@@ -59,6 +59,7 @@ jobs:
           python3 tools/check_emulator.py
           node emulator/tests/unit_test.mjs
           python3 emulator/tests/make_test_images.py
+          python3 tools/linux-guest/mkiso.py --check
           node emulator/tests/boot_test.mjs
           node emulator/tests/linux_test.mjs
 
@@ -126,8 +127,9 @@ jobs:
           set -euo pipefail
           rm -rf staging/emulator
           mkdir -p staging/emulator
-          # "images" is the guest kernel image of the ?demo=linux machine, so
-          # the Android build can boot a real Linux without a network
+          # "images" holds the guest images of the ?demo=linux (the kernel) and
+          # ?demo=cd (the CD built around it) machines, so the Android build
+          # can boot a real 64-bit Linux without a network
           for item in index.html manifest.webmanifest sw.js css js icons vendor images; do
             cp -r "emulator/$item" staging/emulator/
           done

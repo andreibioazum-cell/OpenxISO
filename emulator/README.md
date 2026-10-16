@@ -56,6 +56,7 @@ node emulator/serve.mjs
 http://localhost:8080/emulator/index.html?demo=1     # 64-битный тестовый гость, COM1 и экран
 http://localhost:8080/emulator/index.html?demo=gfx   # он же настраивает VBE 640x480x32
 http://localhost:8080/emulator/index.html?demo=linux # настоящий Linux 6.6 x86-64, см. ниже
+http://localhost:8080/emulator/index.html?demo=cd    # он же, но загруженный с CD через BIOS
 ```
 
 (сборка тестовых образов: `python3 emulator/tests/make_test_images.py`).
@@ -69,6 +70,16 @@ BusyBox (`/init`, `sh`, `cat`, `uname`, `free`, `top`, `vi`, `grep`, `df`,
 `dmesg`, `poweroff`) и `beep`. Движок загружает его по протоколу загрузки Linux,
 поэтому ни BIOS, ни загрузочный сектор, ни образ диска не нужны — достаточно
 файла ядра.
+
+`?demo=cd` подключает к машине **загрузочный CD** и включает её без ядра и без
+параметров: SeaBIOS читает с CD запись El Torito, загрузчик в её первом блоке
+(`tools/linux-guest/linuxboot.S`) сам находит в ISO файл ядра, читает его через
+`INT 13h` и передаёт управление точке входа ядра в реальном режиме — то есть
+всё происходит так, как на настоящей машине. Приложение при этом ничего о ядре
+не знает: оно просто подключило ISO-файл. Ровно так же грузится и любой
+дистрибутивный образ, который пользователь выберет на своём устройстве; CD из
+`emulator/images/linux-6.6-x86_64.iso` собран из того же ядра
+(`tools/linux-guest/mkiso.py`), поэтому он всегда под рукой.
 
 Что происходит дальше:
 
@@ -122,6 +133,7 @@ python3 tools/linux-guest/build.py    # Linux 6.6 + BusyBox 1.36.1, ~10 мину
 | Возможность | Состояние |
 | --- | --- |
 | Загрузка ISO (CD/DVD) | работает, включая подключение на ходу; в настоящем Linux-госте CD виден как `/dev/sr0` и монтируется |
+| Загрузка с ISO через BIOS | работает: SeaBIOS читает El Torito, загрузчик с CD находит ядро и грузит его; `?demo=cd` показывает это на CD из репозитория |
 | Загрузка образа жёсткого диска (.hdd, .img, .raw) | работает; в настоящем Linux-госте образ виден как `/dev/sda`, а его файловая система монтируется при загрузке |
 | Образы из памяти телефона | работает: системный выбор файла + копирование в IndexedDB |
 | Образ по ссылке (https, Range-запросы) | работает: сервер отдаёт файл блоками, в память браузера он не попадает |
@@ -172,6 +184,9 @@ python3 tools/linux-guest/build.py    # Linux 6.6 + BusyBox 1.36.1, ~10 мину
 ядром Linux 6.6 из `emulator/images/linux-6.6-x86_64.bzImage`: оно собрано из
 исходников (`tools/linux-guest/build.py`) и загружается в тесте до оболочки
 BusyBox и обратно, с вводом команд через COM1 и через эмулируемую клавиатуру.
+То же ядро проверяется и по-настоящему: CD `emulator/images/linux-6.6-x86_64.iso`
+(`tools/linux-guest/mkiso.py`) загружается в тесте на машине без ядра и без
+параметров — через BIOS, El Torito и загрузчик с CD (`linuxboot.S`).
 Образы дистрибутивов проверить при сборке не получается: у окружения сборки нет
 доступа к зеркалам, а движок и его автор сообщают о загрузке Debian/Ubuntu в
 длинном режиме.
@@ -182,7 +197,7 @@ BusyBox и обратно, с вводом команд через COM1 и че�
 python3 emulator/tests/make_test_images.py   # собрать тестовые образы
 node emulator/tests/unit_test.mjs            # модули приложения (без браузера)
 node emulator/tests/boot_test.mjs            # загрузка ISO и .hdd в движке
-node emulator/tests/linux_test.mjs           # Linux 6.6: загрузка, оболочка, COM1, диски, звук
+node emulator/tests/linux_test.mjs           # Linux 6.6: загрузка (из файла и с CD), COM1, диски, звук
 node emulator/tests/ui_test.mjs              # интерфейс в настоящем браузере
 node emulator/tests/linux_ui_test.mjs        # тот же Linux через приложение: клавиатура, звук, .hdd
 node emulator/tests/vga_debug.mjs            # экран гостя против его видеопамяти
