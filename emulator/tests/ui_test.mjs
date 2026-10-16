@@ -219,16 +219,27 @@ async function main() {
         await page.waitForFunction(() =>
             document.querySelector(".wizard-step").textContent.includes("Носители"));
 
-        // the first "attach" button belongs to the CD-ROM row
+        // the rows are labelled, and since the machine can also boot a kernel
+        // image the CD-ROM row is no longer the first one: find it by label
         const [chooser] = await Promise.all([
             page.waitForFileChooser(),
-            page.$eval(".media-list .media-details .button", button => button.click()),
+            page.evaluate(() => {
+                const row = [...document.querySelectorAll(".media-list .media-details")]
+                    .find(entry => /Оптический привод/.test(entry.textContent));
+                if (!row) {
+                    throw new Error("the CD-ROM row is not on the media page");
+                }
+                row.querySelector(".media-buttons .button").click();
+            }),
         ]);
         await chooser.accept([path.join(IMAGES, "long-mode-test.iso")]);
 
-        await page.waitForFunction(() =>
-            document.querySelector(".media-name").textContent.includes("long-mode-test.iso"),
-            { timeout: 30000 });
+        await page.waitForFunction(() => {
+            const row = [...document.querySelectorAll(".media-list .media-details")]
+                .find(entry => /Оптический привод/.test(entry.textContent));
+            const name = row && row.querySelector(".media-name");
+            return !!name && name.textContent.includes("long-mode-test.iso");
+        }, { timeout: 30000 });
         await page.evaluate(() => window.OpenxISO.state.store.count("media")).then(count => {
             assert.ok(count >= 1, "the image was written to the store");
         });
@@ -325,6 +336,24 @@ async function main() {
         }
         const locked = await page.evaluate(() => !!document.pointerLockElement);
         assert.equal(locked, false, "the pointer is not locked any more");
+    });
+
+    await test("the capture overlay is the one the app translates", async () => {
+        // the pill used to be built twice: a hidden copy in index.html that the
+        // app updated and a visible one created by the display module
+        const overlay = await page.evaluate(() => {
+            const hint = document.getElementById("capture-hint");
+            return {
+                overlays: document.querySelectorAll("#screen_container .screen-capture").length,
+                hints: document.querySelectorAll("#screen_container .capture-hint").length,
+                shown: !!hint && !hint.closest(".screen-capture").hidden,
+                text: hint ? hint.textContent.trim() : "",
+            };
+        });
+        assert.equal(overlay.overlays, 1, "there is exactly one capture overlay");
+        assert.equal(overlay.hints, 1, "there is exactly one capture hint");
+        assert.ok(overlay.shown, "the hint is shown while the machine runs");
+        assert.ok(overlay.text.length > 0, "the hint has a text");
     });
 
     await test("the screen really shows the guest text mode output", async () => {

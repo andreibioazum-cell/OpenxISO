@@ -23,13 +23,24 @@ CPU=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -n 1)
 MEM=$(sed -n 's/^MemTotal:[[:space:]]*//p' /proc/meminfo)
 DISKS=$(ls /dev/hd? /dev/sd? /dev/vd? 2>/dev/null | tr '\n' ' ')
 
-echo
-echo "OpenxISO guest: Linux $KERNEL on $ARCH"
-[ -n "$CPU" ]  && echo "CPU:    $CPU"
-[ -n "$MEM" ]  && echo "Memory: $MEM"
-[ -n "$DISKS" ] && echo "Disks:  $DISKS"
-echo "Root:   initramfs (the kernel image has the busybox userland built in)"
-echo
-echo "Shells: ttyS0 (this line) and tty1 (the emulated screen)."
-echo "Try: uname -a, cat /proc/cpuinfo, free, ls /bin, help"
-echo
+# The banner goes to both consoles on purpose.  Which one the kernel picked as
+# the *system* console depends on the order of the console= parameters, and this
+# way it does not matter: the emulated screen (tty1) and the serial line (ttyS0,
+# the emulator's COM1 panel) both get the same summary.
+banner() {
+    echo
+    echo "OpenxISO guest: Linux $KERNEL on $ARCH"
+    [ -n "$CPU" ]   && echo "CPU:    $CPU"
+    [ -n "$MEM" ]   && echo "Memory: $MEM"
+    [ -n "$DISKS" ] && echo "Disks:  $DISKS"
+    echo "Root:   initramfs (the kernel image has the busybox userland built in)"
+    echo
+    echo "Shells: ttyS0 (this line) and tty1 (the emulated screen)."
+    echo "Try: uname -a, cat /proc/cpuinfo, free, ls /bin, help"
+    echo "Sound: beep (the emulator plays the guest's PC speaker)"
+    echo
+}
+
+for console in tty1 ttyS0; do
+    banner > "/dev/$console" 2>/dev/null || true
+done

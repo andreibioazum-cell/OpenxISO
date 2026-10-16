@@ -88,6 +88,8 @@ const COMMANDS = [
     // emulator presents is a 64-bit long mode one: a 32-bit guest cannot see it
     ["grep -m1 '^flags' /proc/cpuinfo", /(^|\s)lm(\s|$)/m],
     ["ls /dev/ttyS0", /\/dev\/ttyS0/],
+    ["ls /dev/input", /event0/],
+    ["beep 440 150", /beep: 440 Hz for 150 ms through \/dev\/input\/event0/],
 ];
 
 async function main() {
@@ -100,6 +102,9 @@ async function main() {
 
     const serial = [];
     const screen = new Map();
+
+    /** Every frequency (Hz) the guest asked the emulated PC speaker for. */
+    const tones = [];
 
     const emulator = new V86({
         wasm_path: path.join(vendor, "v86.wasm"),
@@ -122,6 +127,12 @@ async function main() {
     });
     emulator.add_listener("screen-put-char", ([row, col, chr]) => {
         screen.set(row * 256 + col, String.fromCharCode(chr));
+    });
+    // the PC speaker is programmed through the 8253: 1193182 Hz / reload
+    emulator.add_listener("pcspeaker-update", ([mode, reload]) => {
+        if (reload) {
+            tones.push(Math.round(1193182 / reload));
+        }
     });
 
     const text = () => serial.join("");
@@ -187,6 +198,22 @@ async function main() {
             throw new Error(`the shell did not answer ${expected}`);
         });
     }
+
+    console.log("\nsound");
+
+    await check("the guest plays a tone on the emulated PC speaker", async () => {
+        emulator.serial0_send("beep\n");
+        const until = Date.now() + 20000;
+        while (Date.now() < until) {
+            // beep's default is 880 Hz; the driver programs the timer with a
+            // divisor, so the frequency the emulator computes is a rounded one
+            if (tones.some(hz => Math.abs(hz - 880) <= 5)) {
+                return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        throw new Error(`the speaker stayed quiet; it saw ${JSON.stringify(tones)}`);
+    });
 
     console.log("\nchecking that the guest is still healthy");
 

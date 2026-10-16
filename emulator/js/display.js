@@ -60,21 +60,28 @@ export class Display {
     }
 
     build_overlay() {
-        const overlay = document.createElement("div");
-        overlay.className = "screen-capture";
-        overlay.hidden = true;
+        // the overlay lives in index.html, where it is translated
+        // (data-i18n="capture_hint") and where the app finds #capture-hint to
+        // update it when the mouse is captured or released: build one only when
+        // the display runs without that markup
+        let overlay = this.container.querySelector(".screen-capture");
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.className = "screen-capture";
+            overlay.hidden = true;
 
-        const hint = document.createElement("div");
-        hint.className = "capture-hint";
-        hint.textContent = t("capture_hint");
-        overlay.appendChild(hint);
+            const hint = document.createElement("div");
+            hint.className = "capture-hint";
+            hint.textContent = t("capture_hint");
+            overlay.appendChild(hint);
 
-        const mouse = document.createElement("div");
-        mouse.className = "capture-mouse";
-        mouse.title = t("mouse_captured");
-        overlay.appendChild(mouse);
+            const mouse = document.createElement("div");
+            mouse.className = "capture-mouse";
+            mouse.title = t("mouse_captured");
+            overlay.appendChild(mouse);
 
-        this.container.appendChild(overlay);
+            this.container.appendChild(overlay);
+        }
         this.capture_overlay = overlay;
     }
 

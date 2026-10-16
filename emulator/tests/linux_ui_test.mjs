@@ -284,6 +284,29 @@ async function main() {
         assert.equal(audio.sb16, true, "the emulated Sound Blaster 16 exists");
     });
 
+    await test("the guest's beep reaches the emulator's sound hardware", async () => {
+        // the page listens to the engine directly: every frequency the emulated
+        // PC speaker is programmed with lands in this array
+        await page.evaluate(() => {
+            window.__oid_tones = [];
+            window.OpenxISO.state.machine.emulator.add_listener("pcspeaker-update",
+                ([mode, reload]) => {
+                    if (reload) {
+                        window.__oid_tones.push(Math.round(1193182 / reload));
+                    }
+                });
+        });
+        await page.evaluate(() => {
+            document.getElementById("serial-input").value = "beep";
+            document.getElementById("serial-send").click();
+        });
+        const tones = await wait_for(page, "a tone on the PC speaker", () => {
+            const tones = window.__oid_tones || [];
+            return tones.some(hz => Math.abs(hz - 880) <= 5) ? tones : false;
+        }, 30000, diagnose);
+        assert.ok(tones.length > 0, "the speaker was programmed from inside the guest");
+    });
+
     await test("the status bar follows the machine", async () => {
         const status = await page.evaluate(() => ({
             state: document.getElementById("status-state").textContent,

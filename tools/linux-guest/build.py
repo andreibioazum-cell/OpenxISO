@@ -140,11 +140,17 @@ def sha256(path):
 
 
 def host_env(shim):
-    """The environment the kernel build runs with: our bc first, kconfiglib."""
+    """The environment the kernel build runs with: our bc first, kconfiglib.
+
+    KBUILD_BUILD_USER/HOST would otherwise be whoever ran the build on whatever
+    machine: the guest prints them in its banner and in /proc/version, so a
+    shipped image should name the image, not the developer.
+    """
     env = dict(os.environ)
     env["PATH"] = "%s%s%s" % (shim, os.pathsep, env.get("PATH", ""))
     env["KCONFIGLIB_PATH"] = str(HERE / "kconfiglib")
-    env["KBUILD_BUILD_TIMESTAMP"] = env.get("KBUILD_BUILD_TIMESTAMP", "")
+    env["KBUILD_BUILD_USER"] = env.get("KBUILD_BUILD_USER", "openxiso")
+    env["KBUILD_BUILD_HOST"] = env.get("KBUILD_BUILD_HOST", "guest-builder")
     return env
 
 
@@ -190,6 +196,10 @@ def write_kernel_config(kernel_dir, initramfs_dir, shim):
         if line.startswith("CONFIG_") and "=" in line:
             name, _, value = line.partition("=")
             config[name] = value
+        elif line.startswith("# CONFIG_") and line.endswith(" is not set"):
+            # a symbol that is off is written as a comment, so "CONFIG_MODULES=n"
+            # in EXPECTED_CONFIG has to be answered by this branch
+            config[line[len("# "):-len(" is not set")]] = "n"
     missing = [want for want in EXPECTED_CONFIG
                if config.get(want.split("=")[0]) != want.split("=", 1)[1]]
     if missing:
@@ -205,8 +215,8 @@ def write_kernel_config(kernel_dir, initramfs_dir, shim):
 
 
 def build_busybox(work, initramfs_dir, tarball, jobs):
-    """Build a static busybox and install it into the initramfs tree."""
-    bb_src = work / "busybox-%s" % BUSYBOX_VERSION
+    """Build a static busybox, install it into the initramfs tree, add beep."""
+    bb_src = work / ("busybox-%s" % BUSYBOX_VERSION)
     extract(tarball, bb_src)
 
     config = bb_src / ".config"
@@ -244,7 +254,20 @@ def build_busybox(work, initramfs_dir, tarball, jobs):
     shutil.copytree(HERE / "initramfs", initramfs_dir, symlinks=True)
     run(["make", "CONFIG_PREFIX=%s" % initramfs_dir, "install"],
         cwd=bb_src, log_path=work / "busybox.log")
+    build_beep(initramfs_dir, work)
     return initramfs_dir
+
+
+def build_beep(initramfs_dir, work):
+    """Compile the little PC speaker utility into the initramfs.
+
+    It has to be statically linked for the same reason busybox has to be: the
+    initramfs carries no shared libraries.
+    """
+    target = initramfs_dir / "bin/beep"
+    run(["gcc", "-static", "-Os", "-Wall", "-o", str(target), str(HERE / "beep.c")],
+        log_path=work / "busybox.log")
+    log("beep: %d bytes (%s)" % (target.stat().st_size, target))
 
 
 def build_kernel(kernel_dir, shim, jobs):

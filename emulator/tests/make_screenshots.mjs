@@ -62,6 +62,20 @@ async function load_puppeteer() {
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 /**
+ * The "click the screen to capture the mouse" pill is an affordance for the
+ * person in front of the browser: in a picture it only covers the guest's
+ * output, so it is hidden for the shot (the gesture itself is described in the
+ * README and covered by ui_test.mjs).
+ */
+async function hide_screen_hint(page) {
+    await page.evaluate(() => {
+        for (const overlay of document.querySelectorAll("#screen_container .screen-capture")) {
+            overlay.hidden = true;
+        }
+    });
+}
+
+/**
  * Start the app on a page and wait until it is ready. Every screenshot gets its
  * own browser context, so the machine list in each of them is the one the
  * screenshot itself created (the store lives in IndexedDB, which contexts do
@@ -140,6 +154,7 @@ async function main() {
         output.scrollTop = output.scrollHeight;
     });
     await sleep(800);
+    await hide_screen_hint(desktop);
     await shot(desktop, "screenshot.png");
     console.log("screenshot.png");
 
@@ -149,6 +164,7 @@ async function main() {
         () => window.OpenxISO.serial_text().includes("graphics ok"),
         { timeout: 180000 });
     await sleep(1500);
+    await hide_screen_hint(graphics);
     await shot(graphics, "screenshot-graphics.png");
     console.log("screenshot-graphics.png");
 
@@ -164,6 +180,7 @@ async function main() {
         document.querySelector(".vm-window").scrollIntoView();
     });
     await sleep(800);
+    await hide_screen_hint(phone);
     await shot(phone, "screenshot-phone.png");
     console.log("screenshot-phone.png");
 
@@ -175,6 +192,7 @@ async function main() {
     await wizard.waitForFunction(() =>
         document.querySelector(".wizard-step").textContent.includes("Носители"));
     await sleep(400);
+    await hide_screen_hint(wizard);
     await shot(wizard, "screenshot-wizard.png");
     console.log("screenshot-wizard.png");
 
@@ -202,6 +220,7 @@ async function main() {
         output.scrollTop = output.scrollHeight;
     });
     await sleep(800);
+    await hide_screen_hint(linux);
     await shot(linux, "screenshot-linux.png");
     console.log("screenshot-linux.png");
 

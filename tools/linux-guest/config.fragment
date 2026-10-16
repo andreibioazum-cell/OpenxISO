@@ -98,12 +98,18 @@ CONFIG_MAGIC_SYSRQ_SERIAL=y
 # --- console input: PS/2 keyboard drives the VGA console ---
 CONFIG_INPUT=y
 CONFIG_INPUT_KEYBOARD=y
+# The PC speaker: the emulator plays what the guest's driver programs into the
+# 8253/8255, so a real beep comes out of the browser's audio device.  The guest
+# side is tools/linux-guest/beep.c, which drives it through evdev.
+CONFIG_PCSPKR_PLATFORM=y
+CONFIG_INPUT_MISC=y
+CONFIG_INPUT_PCSPKR=y
 CONFIG_KEYBOARD_ATKBD=y
 CONFIG_SERIO=y
 CONFIG_SERIO_I8042=y
 CONFIG_INPUT_MOUSE=n
-CONFIG_INPUT_EVDEV=n
-CONFIG_INPUT_MISC=n
+# evdev is how beep reaches the PC speaker driver
+CONFIG_INPUT_EVDEV=y
 CONFIG_HID_SUPPORT=n
 CONFIG_HW_RANDOM=n
 

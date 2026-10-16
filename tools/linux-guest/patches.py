@@ -39,7 +39,11 @@ the two host tools the kernel's build wants cannot be built:
 Every patch is idempotent: applying them twice is a no-op.
 """
 
-# (file, original text, replacement text, why, marker that proves it is applied)
+# (file, original text, replacement text, why, applied_if)
+#
+# `applied_if` is what makes the patches idempotent and tolerant: a tree that
+# was already patched by hand (or by an older version of this file) is left
+# alone, and only a tree that still has the problem is edited.
 PATCHES = [
     (
         "Makefile",
@@ -61,7 +65,7 @@ PATCHES = [
         "%config: outputmakefile scripts_basic FORCE\n"
         "\t$(Q)$(MAKE) $(build)=scripts/kconfig $@\n",
         "make syncconfig runs the kconfiglib based syncconfig.py, not conf",
-        "syncconfig olddefconfig: outputmakefile scripts_basic FORCE",
+        lambda text: "syncconfig olddefconfig: outputmakefile scripts_basic FORCE" in text,
     ),
     (
         "Makefile",
@@ -69,7 +73,7 @@ PATCHES = [
         "# tools/objtool is not built in this environment (no libelf);\n"
         "# the objtool invocations in scripts/Makefile.lib are no-ops instead.\n",
         "do not try to build tools/objtool",
-        "tools/objtool is not built in this environment",
+        lambda text: "prepare: tools/objtool" not in text,
     ),
     (
         "scripts/Makefile.lib",
@@ -80,7 +84,7 @@ PATCHES = [
         "# objtool-only optimisations are off (see arch/x86/Kconfig below).\n"
         "objtool := true\n",
         "make the objtool invocations harmless",
-        "objtool := true",
+        lambda text: "objtool := true" in text,
     ),
     (
         "arch/x86/Kconfig",
@@ -89,7 +93,7 @@ PATCHES = [
         "# whose only purpose is to have objtool rewrite call sites is not claimed.\n"
         "#\tselect HAVE_STATIC_CALL_INLINE\t\tif HAVE_OBJTOOL\n",
         "no inline static calls without objtool",
-        "#\tselect HAVE_STATIC_CALL_INLINE\t\tif HAVE_OBJTOOL",
+        lambda text: "#\tselect HAVE_STATIC_CALL_INLINE\t\tif HAVE_OBJTOOL" in text,
     ),
     (
         "arch/x86/Kconfig",
@@ -97,20 +101,20 @@ PATCHES = [
         "# Patched by tools/linux-guest: needs objtool, which is not built here.\n"
         "#\tselect HAVE_UACCESS_VALIDATION\t\tif HAVE_OBJTOOL\n",
         "no uaccess validation without objtool",
-        "#\tselect HAVE_UACCESS_VALIDATION\t\tif HAVE_OBJTOOL",
+        lambda text: "#\tselect HAVE_UACCESS_VALIDATION\t\tif HAVE_OBJTOOL" in text,
     ),
 ]
 
 
 def apply_kernel_patches(kernel_dir):
     """Apply every patch above to the kernel source tree at kernel_dir."""
-    for name, old, new, why, marker in PATCHES:
+    for name, original, replacement, why, applied_if in PATCHES:
         path = kernel_dir / name
         text = path.read_text()
-        if marker in text:
+        if applied_if(text):
             print("  already patched: %s (%s)" % (name, why))
             continue
-        if old not in text:
-            raise SystemExit("patch target not found in %s: %r" % (name, old[:60]))
-        path.write_text(text.replace(old, new, 1))
+        if original not in text:
+            raise SystemExit("patch target not found in %s: %r" % (name, original[:60]))
+        path.write_text(text.replace(original, replacement, 1))
         print("  patched %s: %s" % (name, why))
