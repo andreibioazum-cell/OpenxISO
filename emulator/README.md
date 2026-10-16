@@ -48,6 +48,35 @@ node emulator/serve.mjs
 растянуть на весь экран кнопкой **Во весь экран**, появившееся окно станет
 гостевым рабочим столом.
 
+Если под рукой нет ISO, можно посмотреть на работу эмулятора на тестовом образе:
+
+```
+http://localhost:8080/emulator/index.html?demo=1     # 64-битный гость, COM1 и экран
+http://localhost:8080/emulator/index.html?demo=gfx   # он же настраивает VBE 640x480x32
+```
+
+(сборка тестовых образов: `python3 emulator/tests/make_test_images.py`).
+
+## Как это выглядит
+
+![Машина с 64-битным гостем: экран и консоль COM1](docs/screenshot.png)
+
+Слева список машин, сверху кнопки питания, в центре экран гостевой системы и
+консоль COM1 с тем, что гость напечатал (`64-bit long mode`, счётчик прерываний
+таймера и PS/2, `done`).
+
+![Гостевой режим 640x480x32](docs/screenshot-graphics.png)
+
+Тот же тестовый гость в графическом режиме: он сам настраивает Bochs VBE на
+640x480x32 и рисует в линейный кадровый буфер; в строке состояния видно
+`640x480x32`.
+
+![Мастер создания машины](docs/screenshot-wizard.png)
+![Телефонная вёрстка](docs/screenshot-phone.png)
+
+Скриншоты сделаны автоматически (`node emulator/tests/make_screenshots.mjs`),
+поэтому их можно пересобрать в любой момент.
+
 ## Что уже работает
 
 | Возможность | Состояние |
@@ -95,6 +124,7 @@ python3 emulator/tests/make_test_images.py   # собрать тестовые �
 node emulator/tests/unit_test.mjs            # модули приложения (без браузера)
 node emulator/tests/boot_test.mjs            # загрузка ISO и .hdd в движке
 node emulator/tests/ui_test.mjs              # интерфейс в настоящем браузере
+node emulator/tests/make_screenshots.mjs     # картинки для этого файла
 ```
 
 * `tests/boot64.S` — крошечная загрузочная программа, которая делает то же, что

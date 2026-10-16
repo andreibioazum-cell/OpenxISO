@@ -86,6 +86,7 @@ const strings = {
         eject: "Отключить",
         create_blank: "Создать пустой…",
         no_media: "не подключён",
+        storage_url: "по ссылке",
         media_storage: "Хранить образ в браузере",
         media_storage_help:
             "Если включено, образ копируется в хранилище браузера и машина сможет " +

@@ -51,9 +51,15 @@ APPLICATION_FILES = (
     "serve.mjs",
     "tests/unit_test.mjs",
     "tests/boot_test.mjs",
+    "tests/ui_test.mjs",
+    "tests/make_screenshots.mjs",
     "tests/boot64.S",
     "tests/make_test_images.py",
     "README.md",
+    "docs/screenshot.png",
+    "docs/screenshot-graphics.png",
+    "docs/screenshot-phone.png",
+    "docs/screenshot-wizard.png",
 )
 
 ENGINE_FILES = (

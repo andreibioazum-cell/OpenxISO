@@ -209,7 +209,9 @@ function render_details() {
 
     for (const entry of attached_media(machine)) {
         rows.push([t(settings.MEDIA_LABELS[entry.kind]),
-                   `${entry.media.name} (${format_bytes(entry.media.size)})`]);
+                   entry.media.size
+                       ? `${entry.media.name} (${format_bytes(entry.media.size)})`
+                       : `${entry.media.name} (${t("storage_url")})`]);
     }
 
     const buttons = el("div.details-buttons", {}, [
@@ -724,6 +726,22 @@ async function attach_media(machine, kind, refresh) {
  * requests, so a large ISO does not have to be downloaded or copied into the
  * browser storage first.
  */
+/**
+ * Ask a server how big the image behind a URL is. A missing Content-Length
+ * (chunked responses, some CDNs) simply leaves the size unknown.
+ *
+ * @param {string} url
+ * @return {Promise<number>}
+ */
+async function probe_size(url) {
+    try {
+        const response = await fetch(url, { method: "HEAD" });
+        return parseInt(response.headers.get("content-length") || "0", 10) || 0;
+    } catch (error) {
+        return 0;
+    }
+}
+
 async function attach_media_url(machine, kind, refresh, preset_url) {
     let url = preset_url;
     let size = 0;
@@ -1221,16 +1239,26 @@ async function main() {
         }
     }
 
-    // ?demo=<url of an ISO> (or ?demo=1 for build/emulator-tests/long-mode-test.iso)
-    // creates a machine and boots it, which is handy for a quick look
+    // ?demo=<url of an ISO> (or ?demo=1 / ?demo=gfx for the test images in
+    // build/emulator-tests) creates a machine and boots it, which is handy for
+    // a quick look at the emulator without attaching anything by hand
     const demo = new URLSearchParams(location.search).get("demo");
     if (demo !== null) {
-        const url = demo === "" || demo === "1"
-            ? new URL("../build/emulator-tests/long-mode-test.iso", location.href).href
+        const images = {
+            "": "long-mode-test.iso",
+            "1": "long-mode-test.iso",
+            "iso": "long-mode-test.iso",
+            "2": "long-mode-gfx-test.iso",
+            "gfx": "long-mode-gfx-test.iso",
+        };
+        const url = demo in images
+            ? new URL("../build/emulator-tests/" + images[demo], location.href).href
             : demo;
         const machine = create_machine({ name: "Демонстрация x86-64" });
-        machine.media.cdrom = { id: new_id("url-"), name: url.split("/").pop(), size: 0,
-                                url: url, storage: "url", writable: false };
+        machine.media.cdrom = {
+            id: new_id("url-"), name: url.split("/").pop(), size: await probe_size(url),
+            url: url, storage: "url", writable: false,
+        };
         finalize_machine(machine, "Демонстрация");
         await save_machine(machine);
         select_machine(machine.id);
