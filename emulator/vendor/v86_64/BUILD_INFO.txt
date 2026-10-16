@@ -1,0 +1,15 @@
+v86_64 — x86-64 PC emulator and x86-to-wasm JIT (64-bit fork of v86)
+upstream: https://github.com/portlandhodl/v86_64
+commit:   c394574477b57eadfc859f593b4aecb08fa37cb6
+built:    2026-10-16T12:00:24Z on GitHub Actions (ubuntu-latest)
+rust:     rustc 1.99.1 (58cf8f9c3 2026-10-13)
+clang:    Ubuntu clang version 18.1.3 (1ubuntu1)
+
+sha256:
+5adb41cdebe97570a4374268594f2619ef9ccf5c5a41ad44f8404818e9e8690c  v86-fallback.wasm
+d8d470e3de556541a4dc0771ffd5f103185bccd1b645e08efe79bbe3c5d756d6  v86-mem64.wasm
+f73d6b1f6a111263c5401c19f064809440aaf141aa6110bf2675ff8f428143b7  v86.wasm
+443d8bea59edb13fa701eb9f13bdc1e78a85925b75c005723c95ce5a4245d262  libv86.mjs
+135db10e8b0e045747d8962664f0dfd9260f1f7ee6483b8396cdde29bb2a9be7  libv86.js
+73e3f359102e3a9982c35fce98eb7cd08f18303ac7f1ba6ebfbe6cdc1c244d98  seabios.bin
+a4bc0d80cc3ca028c73dafa8fee396b8d054ce87ebd8abfbd31b06b437607880  vgabios.bin
