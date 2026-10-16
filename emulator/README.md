@@ -177,6 +177,7 @@ node emulator/tests/boot_test.mjs            # загрузка ISO и .hdd в �
 node emulator/tests/linux_test.mjs           # Linux 6.6: загрузка, оболочка, COM1, экран
 node emulator/tests/ui_test.mjs              # интерфейс в настоящем браузере
 node emulator/tests/linux_ui_test.mjs        # тот же Linux, но через приложение
+node emulator/tests/vga_debug.mjs            # экран гостя против его видеопамяти
 node emulator/tests/make_screenshots.mjs     # картинки для этого файла
 ```
 
@@ -198,6 +199,10 @@ node emulator/tests/make_screenshots.mjs     # картинки для этог�
   Вариант с графикой собирается из того же файла (`-DWITH_GRAPHICS=1`).
 * `tests/boot_test.mjs` грузит образ как ISO (El Torito), как .hdd (MBR + чтение
   секторов через int 13h) и графический вариант как ISO.
+* `tests/vga_debug.mjs` показывает построчно, что нарисовано на экране, и что
+  лежит в видеопамяти по адресу начала (CRTC start address), и падает, если они
+  расходятся. Так проверено, что текстовый режим рисуется честно: Linux
+  прокручивает консоль именно сменой этого адреса.
 * `tests/ui_test.mjs` открывает приложение в headless Chrome, создаёт машину
   через мастер, подключает ISO через системный выбор файла, запускает её,
   щёлкает по экрану (захват мыши), нажимает клавишу и двигает мышь — гость
