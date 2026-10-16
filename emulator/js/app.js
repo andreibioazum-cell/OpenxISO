@@ -414,7 +414,15 @@ async function reset_machine() {
     if (!await confirm("Перезагрузить гостевую систему (сброс без выключения)?")) {
         return;
     }
-    state.machine.reset();
+    try {
+        await state.machine.reset();
+        toast("Гостевая система перезагружается");
+    } catch (error) {
+        console.error("cannot reset the machine:", error);
+        const message = [error && error.message, error && error.cause && error.cause.message]
+            .filter(Boolean).join(": ") || String(error);
+        toast(message, "error");
+    }
 }
 
 function toggle_pause() {

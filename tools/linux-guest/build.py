@@ -70,6 +70,23 @@ EXPECTED_CONFIG = [
     "CONFIG_VGA_CONSOLE=y",
     "CONFIG_BINFMT_ELF=y",
     "CONFIG_DEVTMPFS=y",
+    # the disks: the engine's PCI IDE function is a PIIX3 (8086:7010) with the
+    # bus master register block where a PIIX3 has it, so ata_piix is the driver
+    # that turns an attached .hdd or .iso into /dev/sda and /dev/sr0
+    "CONFIG_PCI=y",
+    "CONFIG_ATA=y",
+    "CONFIG_ATA_PIIX=y",
+    "CONFIG_ATA_BMDMA=y",
+    "CONFIG_SCSI=y",
+    "CONFIG_BLK_DEV_SD=y",
+    "CONFIG_BLK_DEV_SR=y",
+    # and the filesystems an image from a phone or a PC is likely to carry
+    "CONFIG_EXT2_FS=y",
+    "CONFIG_EXT4_FS=y",
+    "CONFIG_VFAT_FS=y",
+    "CONFIG_MSDOS_FS=y",
+    "CONFIG_ISO9660_FS=y",
+    "CONFIG_NLS=y",
     "CONFIG_OBJTOOL=y",              # the asm annotation macros need this
     "CONFIG_MODULES=n",
 ]

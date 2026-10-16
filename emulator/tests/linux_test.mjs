@@ -10,13 +10,22 @@
  * protocol, so no BIOS, boot sector or disk image is involved - the machine
  * boots a 64-bit Linux kernel from a single file.
  *
+ * The machine can also have images attached to it. By default the test attaches
+ * the two images make_test_images.py generates (build/emulator-tests): the
+ * 64 MiB .hdd on the emulated IDE controller and the ISO on the emulated
+ * CD-ROM. That is the whole disk path a user gets from the app's file picker:
+ * the engine's IDE controller -> pata_legacy in the guest -> /dev/sda and
+ * /dev/sr0 -> dd, md5sum, mkfs.ext2 and mount in the guest's shell.
+ *
  *     node emulator/tests/linux_test.mjs
  *
  * Options: --kernel PATH, --cmdline TEXT, --timeout SECONDS, --verbose,
+ *          --hda PATH, --cdrom PATH, --no-disks (boot with nothing attached),
  *          --keep-vga (print the whole text screen at the end).
  */
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
@@ -31,7 +40,13 @@ const DEFAULTS = {
     timeout: 180,
     verbose: false,
     keep_vga: false,
+    hda: null,
+    cdrom: null,
+    no_disks: false,
 };
+
+/** Where make_test_images.py puts the images this test attaches by default. */
+const TEST_IMAGES = path.join(repo, "build", "emulator-tests");
 
 function parse_args(argv) {
     const options = { ...DEFAULTS };
@@ -41,14 +56,21 @@ function parse_args(argv) {
             options.verbose = true;
         } else if (arg === "--keep-vga") {
             options.keep_vga = true;
+        } else if (arg === "--no-disks") {
+            options.no_disks = true;
         } else if (arg === "--kernel") {
             options.kernel = argv[++index];
         } else if (arg === "--cmdline") {
             options.cmdline = argv[++index];
+        } else if (arg === "--hda") {
+            options.hda = argv[++index];
+        } else if (arg === "--cdrom") {
+            options.cdrom = argv[++index];
         } else if (arg === "--timeout") {
             options.timeout = Number(argv[++index]);
         } else if (arg === "--help") {
-            console.log("usage: linux_test.mjs [--kernel PATH] [--cmdline TEXT] [--timeout SECONDS]");
+            console.log("usage: linux_test.mjs [--kernel PATH] [--cmdline TEXT] [--timeout SECONDS]" +
+                " [--hda PATH] [--cdrom PATH] [--no-disks]");
             process.exit(0);
         } else {
             console.error(`error: unknown option ${arg}`);
@@ -56,6 +78,12 @@ function parse_args(argv) {
         }
     }
     return options;
+}
+
+/** The generated test image of that name, or null when it is not there. */
+function test_image(name) {
+    const candidate = path.join(TEST_IMAGES, name);
+    return fs.existsSync(candidate) ? candidate : null;
 }
 
 /** What the guest must print for the boot to count as complete. */
@@ -95,8 +123,25 @@ const COMMANDS = [
 async function main() {
     const options = parse_args(process.argv.slice(2));
     const kernel = fs.readFileSync(options.kernel);
-    console.log(`kernel:  ${options.kernel} (${kernel.length} bytes)`);
-    console.log(`cmdline: ${options.cmdline}\n`);
+
+    // the disk side of the machine: a .hdd on the emulated IDE controller and
+    // an ISO on the emulated CD-ROM, both written by make_test_images.py
+    if (!options.no_disks) {
+        options.hda = options.hda || test_image("long-mode-test.hdd");
+        options.cdrom = options.cdrom || test_image("long-mode-test.iso");
+    }
+
+    /** An exact sized ArrayBuffer, which is what v86 takes for {buffer}. */
+    const read_image = file => new Uint8Array(fs.readFileSync(file)).buffer;
+
+    const label = name => (name + ":").padEnd(9);
+    console.log(label("kernel") + `${options.kernel} (${kernel.length} bytes)`);
+    console.log(label("cmdline") + options.cmdline);
+    console.log(label("hda") + (options.hda ?
+        `${options.hda} (${fs.statSync(options.hda).size} bytes)` : "nothing attached"));
+    console.log(label("cdrom") + (options.cdrom ?
+        `${options.cdrom} (${fs.statSync(options.cdrom).size} bytes)` : "nothing attached"));
+    console.log("");
 
     const { V86 } = await import(url.pathToFileURL(path.join(vendor, "libv86.mjs")).href);
 
@@ -112,6 +157,8 @@ async function main() {
         vga_bios: { url: path.join(vendor, "vgabios.bin") },
         bzimage: new Uint8Array(kernel),
         cmdline: options.cmdline,
+        hda: options.hda ? { buffer: read_image(options.hda) } : undefined,
+        cdrom: options.cdrom ? { buffer: read_image(options.cdrom) } : undefined,
         memory_size: 512 * 1024 * 1024,
         vga_memory_size: 8 * 1024 * 1024,
         acpi: true,
@@ -156,6 +203,40 @@ async function main() {
         throw new Error(`timed out after ${timeout}s waiting for ${what}`);
     }
 
+    /**
+     * Run a command in the guest's shell and return what it printed.
+     *
+     * The shell echoes the command line over the same line, so the answer is
+     * bracketed with two markers and the *last* opening marker is the one the
+     * shell printed itself (the first one is the echo of the command).
+     */
+    let counter = 0;
+    async function question(command, timeout = 30000) {
+        // the markers are built with printf so that the line the shell echoes
+        // back (which is the command itself) cannot contain the finished
+        // marker: only the guest's own output can
+        const tag = `q${(counter++).toString(36)}x${process.pid}`;
+        const open = `OID-L${tag}-R`;
+        const close = `OID-X${tag}-Y`;
+        const before = text().length;
+        emulator.serial0_send("printf 'OID-L%s-R\\n' " + tag + "; " + command +
+            "; printf 'OID-X%s-Y\\n' " + tag + "\n");
+        const until = Date.now() + timeout;
+        while (Date.now() < until) {
+            const answer = text().slice(before);
+            const from = answer.indexOf(open);
+            const to = answer.indexOf(close, from + open.length);
+            if (from >= 0 && to > from) {
+                return answer.slice(from + open.length, to).replace(/\r/g, "").trim();
+            }
+            if (/Kernel panic|not syncing/.test(text())) {
+                throw new Error(`the kernel panicked while running "${command}"`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        throw new Error(`the guest did not run "${command}"`);
+    }
+
     let failures = 0;
     const check = async (name, fn) => {
         try {
@@ -196,6 +277,113 @@ async function main() {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
             throw new Error(`the shell did not answer ${expected}`);
+        });
+    }
+
+    console.log("\nthe attached hard disk image");
+
+    if (options.hda) {
+        const image = fs.readFileSync(options.hda);
+        const md5 = bytes => crypto.createHash("md5").update(bytes).digest("hex");
+        const expected_sectors = image.length / 512;
+
+        await check("the guest sees the .hdd as /dev/sda, with the size of the file", async () => {
+            const size = await question("cat /sys/block/sda/size");
+            assert.equal(Number(size.trim()), expected_sectors,
+                "the kernel reports the disk in 512 byte sectors");
+            const partitions = await question("cat /proc/partitions");
+            assert.match(partitions, /^\s*\d+\s+\d+\s+\d+\s+sda$/m, "the disk is a block device");
+        });
+
+        await check("the guest reads the host's image byte for byte", async () => {
+            const answer = await question("dd if=/dev/sda bs=512 count=4 2>/dev/null | md5sum");
+            assert.equal(answer.split(/\s+/)[0], md5(image.subarray(0, 2048)),
+                "the first four sectors came back exactly as they are in the file");
+        });
+
+        await check("the guest writes to the disk at the offset it was told to", async () => {
+            await question("dd if=/dev/zero of=/dev/sda bs=512 seek=2048 count=8 " +
+                "conv=notrunc 2>/dev/null; sync");
+            const written = await question("dd if=/dev/sda bs=512 skip=2048 count=8 " +
+                "2>/dev/null | md5sum");
+            assert.equal(written.split(/\s+/)[0], md5(Buffer.alloc(8 * 512)),
+                "the sectors that were written read back as zero");
+            const untouched = await question("dd if=/dev/sda bs=512 count=4 2>/dev/null | md5sum");
+            assert.equal(untouched.split(/\s+/)[0], md5(image.subarray(0, 2048)),
+                "the sectors that were not written are still the ones from the file");
+        });
+
+        await check("the guest formats the disk, mounts it and reads its file back", async () => {
+            await question("mkfs.ext2 -qF /dev/sda 2>&1; sync", 180000);
+            const answer = await question(
+                "mkdir -p /mnt/d; mount /dev/sda /mnt/d && " +
+                "echo openxiso-disk-ok > /mnt/d/proof.txt && sync && umount /mnt/d && " +
+                "mount /dev/sda /mnt/d && cat /mnt/d/proof.txt", 120000);
+            assert.match(answer, /openxiso-disk-ok/,
+                "a file written through the ext2 filesystem came back from it");
+            const usage = await question("df /mnt/d | tail -n 1");
+            assert.match(usage, /\/mnt\/d/, "the filesystem is mounted inside the guest");
+        });
+
+        await check("the file on the host is untouched (the guest writes to the emulator's copy)", async () => {
+            const again = fs.readFileSync(options.hda);
+            assert.equal(again.length, image.length, "the image size did not change");
+            assert.equal(md5(again.subarray(0, 2048)), md5(image.subarray(0, 2048)),
+                "not a byte of the disk image on the host was modified");
+        });
+
+        await check("the guest's writes can be taken out of the machine and booted again", async () => {
+            // the engine holds the modified image in the disk buffer, and this
+            // is the same buffer the app's "save the image" button hands back
+            const modified = await new Promise(resolve => {
+                emulator.v86.cpu.devices.ide.primary.master.buffer.get_buffer(resolve);
+            });
+            assert.ok(modified && modified.byteLength === image.length,
+                "the whole image can be read back out of the machine");
+
+            // boot a second machine with those bytes: if they are really the
+            // filesystem the guest formatted, its own boot script finds the
+            // filesystem on the disk and mounts it without being asked
+            const second = new V86({
+                wasm_path: path.join(vendor, "v86.wasm"),
+                bios: { url: path.join(vendor, "seabios.bin") },
+                vga_bios: { url: path.join(vendor, "vgabios.bin") },
+                bzimage: new Uint8Array(kernel),
+                cmdline: options.cmdline,
+                hda: { buffer: modified },
+                memory_size: 512 * 1024 * 1024,
+                vga_memory_size: 8 * 1024 * 1024,
+                acpi: true,
+                autostart: true,
+            });
+            const log = [];
+            second.add_listener("serial0-output-byte", byte => log.push(String.fromCharCode(byte)));
+            const booted = () => {
+                const text = log.join("").replace(/\r/g, "");
+                return /openxiso:~#/.test(text) ? text : null;
+            };
+            let text = null;
+            const until = Date.now() + 180000;
+            while (Date.now() < until && !(text = booted())) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            second.destroy();
+            assert.ok(text, "the second machine came up");
+            assert.match(text, new RegExp(`Disk:\\s+/dev/sda, ${image.length >> 20} MiB`),
+                "it reported the disk it was given");
+            assert.match(text, /mounted on \/mnt\/disk, read-write/,
+                "the filesystem the first machine created was mounted by itself");
+            assert.match(text, /proof\.txt/, "and its contents are there");
+        });
+    } else {
+        console.log("  (no .hdd attached; build/emulator-tests has one: run make_test_images.py)");
+    }
+
+    if (options.cdrom) {
+        await check("the guest mounts the ISO from the emulated CD-ROM", async () => {
+            const answer = await question(
+                "mkdir -p /mnt/cd; mount -t iso9660 -o ro /dev/sr0 /mnt/cd && ls /mnt/cd", 60000);
+            assert.match(answer, /readme\.txt/i, "the ISO's root directory is readable");
         });
     }
 
@@ -248,8 +436,12 @@ async function main() {
         // the boot log has scrolled past by now, so look for what the guest
         // prints when it comes up: the init banner, the shell's motd and its
         // prompt, all of which are on tty1
-        assert.match(vga, /Run \/init as init process/);
+        // by now the boot log has scrolled off the screen, so what has to be
+        // there is what the guest prints when it comes up: the motd and the
+        // prompt of the shell on tty1 (the boot log itself is checked above,
+        // on the serial console)
         assert.match(vga, /64-bit x86 emulator/);
+        assert.match(vga, /guest: Linux on x86_64/);
         assert.match(vga, /openxiso:~#/);
     });
 

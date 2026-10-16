@@ -7,8 +7,7 @@
 
 # the mount points have to exist before they can be mounted; the skeleton
 # ships them, but creating them is cheap and makes the image robust
-mkdir -p /dev /proc /sys /tmp
-
+mkdir -p /dev /proc /sys /tmp /mnt
 mount -t devtmpfs dev /dev 2>/dev/null
 mount -t proc     proc  /proc
 mount -t sysfs    sysfs /sys
@@ -21,18 +20,55 @@ KERNEL=$(uname -r)
 ARCH=$(uname -m)
 CPU=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -n 1)
 MEM=$(sed -n 's/^MemTotal:[[:space:]]*//p' /proc/meminfo)
-DISKS=$(ls /dev/hd? /dev/sd? /dev/vd? 2>/dev/null | tr '\n' ' ')
+
+# Anything attached to the machine (a .hdd from the user's device, a CD image)
+# is presented through the emulated IDE controller, so it shows up as /dev/sd*.
+# Every disk is reported with its size, and the first filesystem that is on one
+# of them is mounted read-write: an image the user attached is then visible from
+# inside the guest without typing anything.  The guest's writes go to the
+# emulator's copy of the image - the file on the host is never modified.
+disk_report() {
+    for dev in /dev/sda /dev/sdb /dev/hda /dev/hdb; do
+        [ -b "$dev" ] || continue
+        sectors=$(cat "/sys/block/$(basename "$dev")/size" 2>/dev/null)
+        echo "Disk:   $dev, $(( ${sectors:-0} / 2048 )) MiB"
+        for part in "${dev}1" "${dev}"; do
+            [ -b "$part" ] || continue
+            mkdir -p /mnt/disk
+            if mount "$part" /mnt/disk 2>/dev/null; then
+                echo "        mounted on /mnt/disk, read-write, contains:"
+                ls /mnt/disk 2>/dev/null | head -n 4 | tr '\n' ' ' |
+                    sed 's/^/          /'
+                echo
+                break
+            fi
+        done
+    done
+
+    if [ -b /dev/sr0 ]; then
+        mkdir -p /mnt/cdrom
+        if mount -t iso9660 -o ro /dev/sr0 /mnt/cdrom 2>/dev/null; then
+            echo "CD:     /dev/sr0 mounted on /mnt/cdrom, contains:"
+            ls /mnt/cdrom 2>/dev/null | head -n 4 | tr '\n' ' ' |
+                sed 's/^/          /'
+            echo
+        else
+            echo "CD:     /dev/sr0 (no filesystem the guest can mount)"
+        fi
+    fi
+}
 
 # The banner goes to both consoles on purpose.  Which one the kernel picked as
 # the *system* console depends on the order of the console= parameters, and this
 # way it does not matter: the emulated screen (tty1) and the serial line (ttyS0,
-# the emulator's COM1 panel) both get the same summary.
+# the emulator's COM1 panel) both get the same summary.  The disks are looked at
+# once and the same text is written to both.
 banner() {
     echo
     echo "OpenxISO guest: Linux $KERNEL on $ARCH"
-    [ -n "$CPU" ]   && echo "CPU:    $CPU"
-    [ -n "$MEM" ]   && echo "Memory: $MEM"
-    [ -n "$DISKS" ] && echo "Disks:  $DISKS"
+    [ -n "$CPU" ] && echo "CPU:    $CPU"
+    [ -n "$MEM" ] && echo "Memory: $MEM"
+    [ -n "$1" ]   && echo "$1"
     echo "Root:   initramfs (the kernel image has the busybox userland built in)"
     echo
     echo "Shells: ttyS0 (this line) and tty1 (the emulated screen)."
@@ -41,6 +77,8 @@ banner() {
     echo
 }
 
+TEXT=$(banner "$(disk_report)")
+
 for console in tty1 ttyS0; do
-    banner > "/dev/$console" 2>/dev/null || true
+    printf '%s\n' "$TEXT" > "/dev/$console" 2>/dev/null || true
 done

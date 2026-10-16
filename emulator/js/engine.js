@@ -304,14 +304,27 @@ export class Machine {
         this.on_event("state", this.status);
     }
 
-    /** Reset the machine (guest keeps running, everything is rebooted). */
-    reset() {
+    /**
+     * Reset the machine: a power cycle.
+     *
+     * v86's own restart() cannot be used here.  A machine that was booted
+     * through the Linux boot protocol comes back through the BIOS when it is
+     * restarted, and the v86_64 engine's CPU dies on the #GP that path hits
+     * ("panicked at cpu.rs: Unimplemented: #GP handler" in the wasm module, the
+     * emulator is gone afterwards - see the limitations in emulator/README.md).
+     * Stopping and starting the machine instead brings the guest up exactly the
+     * way it came up the first time; like a power cycle, whatever the guest had
+     * written into an attached image is lost (the app can save the image with
+     * its own button before that).
+     *
+     * @return {Promise<void>}
+     */
+    async reset() {
         if (!this.emulator) {
             throw new EngineError("the machine is not running");
         }
-        this.emulator.restart();
-        this.status = "running";
-        this.on_event("state", this.status);
+        await this.stop();
+        await this.start();
     }
 
     pause() {

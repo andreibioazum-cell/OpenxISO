@@ -11,5 +11,5 @@ engine:    emulator/vendor/v86_64, booted through the Linux boot protocol
 cmdline:   console=tty0 console=ttyS0,115200
 
 files:
-  linux-6.6-x86_64.bzImage                 3030944 bytes  sha256 e8de7da362ea0dad700196c74c51030d0d940ddcfff620e4cdbea37651cfcb6e
-  linux-6.6-x86_64.config                    36057 bytes  sha256 0ace07efc91555f5819869f054960785d434314833b83c61427872fe3153024b
+  linux-6.6-x86_64.bzImage                 3625408 bytes  sha256 e2bcf5510377d36b61c0542dceff70d1f645f1985f15e0ec40ba395f6aa24890
+  linux-6.6-x86_64.config                    49988 bytes  sha256 1bb518deab1cf1d1cdcbd87780bfbd0c7b4e3827ed385b269aa1cb646de71ec2

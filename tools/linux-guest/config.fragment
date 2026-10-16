@@ -113,16 +113,34 @@ CONFIG_INPUT_EVDEV=y
 CONFIG_HID_SUPPORT=n
 CONFIG_HW_RANDOM=n
 
-# --- no PCI, no disks, no net, no sound ---
-CONFIG_PCI=n
+# --- the emulated machine has a PIIX3 ISA bridge and the IDE task files at the
+# --- legacy ports, so PCI plus libata are what turn an attached .hdd or ISO
+# --- image into /dev/sda and /dev/sr0 ---
+CONFIG_PCI=y
+CONFIG_ATA=y
+# The engine presents the IDE controller exactly like a PIIX3 does: as the PCI
+# function 8086:7010 (class 01/01, "ISA compatibility mode-only controller,
+# supports bus mastering") whose BAR0-BAR3 are the legacy ports 0x1F0/0x3F6 and
+# 0x170/0x376 and whose BAR4 is the bus master register block at 0xB400.  The
+# driver for that device is ata_piix, and it needs the BMDMA support it is
+# built on.  It is only there when a drive is attached, so a machine with no
+# disks has no IDE function at all.
+CONFIG_ATA_PIIX=y
+CONFIG_ATA_BMDMA=y
+# pata_legacy would claim the legacy ports of a machine *without* the PCI
+# function - there is no such machine here, and probing empty ports only costs
+# boot time, so it stays off.
+CONFIG_PATA_LEGACY=n
+CONFIG_SCSI=y
+# libata drives: disks as /dev/sda, CD-ROMs as /dev/sr0
+CONFIG_BLK_DEV_SD=y
+CONFIG_BLK_DEV_SR=y
 CONFIG_NET=n
 CONFIG_SOUND=n
 CONFIG_USB_SUPPORT=n
-CONFIG_ATA=n
-CONFIG_SCSI=n
-CONFIG_BLK_DEV_SD=n
-CONFIG_BLK_DEV_SR=n
-CONFIG_BLK_DEV_IDECD=n
+# there is no separate IDE cdrom driver any more (BLK_DEV_IDECD went away with
+# the old IDE stack in 5.14); libata plus BLK_DEV_SR is what handles CD images
+# on both the legacy and the PCI ports
 CONFIG_BLK_DEV_RAM=n
 CONFIG_MD=n
 CONFIG_DM=n
@@ -164,15 +182,26 @@ CONFIG_PROC_SYSCTL=y
 CONFIG_SYSFS=y
 CONFIG_SYSCTL=y
 CONFIG_CONFIGFS_FS=n
-CONFIG_EXT4_FS=n
-CONFIG_FAT_FS=n
-CONFIG_ISO9660_FS=n
-CONFIG_MSDOS_FS=n
-CONFIG_VFAT_FS=n
+# ext2 is what busybox' mkfs.ext2 writes and mount reads; vfat and iso9660 are
+# there for disk and CD images that come from a phone or a PC
+CONFIG_EXT2_FS=y
+# ext4 is the most likely filesystem on a disk image that came from a phone or
+# a PC, and it is what makes "attach a .hdd and boot" work without the user
+# having to format anything: ext4 pulls in jbd2 (the journal) and the CRC32C
+# crypto helper on its own
+CONFIG_EXT4_FS=y
+CONFIG_FAT_FS=y
+CONFIG_MSDOS_FS=y
+CONFIG_VFAT_FS=y
+CONFIG_ISO9660_FS=y
 CONFIG_FUSE_FS=n
 CONFIG_OVERLAY_FS=n
 CONFIG_SQUASHFS=n
-CONFIG_NLS=n
+CONFIG_NLS=y
+CONFIG_NLS_DEFAULT="utf8"
+CONFIG_NLS_CODEPAGE_437=y
+CONFIG_NLS_ISO8859_1=y
+CONFIG_NLS_UTF8=y
 CONFIG_KEYS=n
 CONFIG_QUOTA=n
 CONFIG_XFS_FS=n

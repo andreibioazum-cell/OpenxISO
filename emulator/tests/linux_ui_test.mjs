@@ -24,6 +24,7 @@
  */
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
@@ -80,10 +81,12 @@ async function test(name, body) {
     }
 }
 
-async function wait_for(page, description, condition, timeout, diagnostics) {
+async function wait_for(page, description, condition, timeout, diagnostics, argument) {
     const deadline = Date.now() + (timeout || 60000);
     for (;;) {
-        const value = await page.evaluate(condition);
+        // the condition runs inside the page: anything it needs from here has to
+        // be passed as an argument, a closure would lose it
+        const value = await page.evaluate(condition, argument);
         if (value) {
             return value;
         }
@@ -305,6 +308,84 @@ async function main() {
             return tones.some(hz => Math.abs(hz - 880) <= 5) ? tones : false;
         }, 30000, diagnose);
         assert.ok(tones.length > 0, "the speaker was programmed from inside the guest");
+    });
+
+    await test("a .hdd dropped on the window is attached to the machine", async () => {
+        // a disk has to be there when the machine is created (the emulated IDE
+        // controller has no hot plug), so: stop, drop the image, power on again
+        await page.evaluate(() => document.getElementById("btn-stop").click());
+        await wait_for(page, "the machine to stop", () => !window.OpenxISO.state.machine, 30000, diagnose);
+
+        await page.evaluate(async () => {
+            const blob = await (await fetch("../build/emulator-tests/long-mode-test.hdd")).blob();
+            const file = new File([blob], "long-mode-test.hdd", { type: "application/octet-stream" });
+            const transfer = new DataTransfer();
+            transfer.items.add(file);
+            const workspace = document.getElementById("workspace");
+            workspace.dispatchEvent(new DragEvent("dragenter", { bubbles: true, dataTransfer: transfer }));
+            workspace.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
+        });
+
+        const attached = await wait_for(page, "the image to be attached", () => {
+            const machine = window.OpenxISO.state.machines[0];
+            return machine.media.hda ? { name: machine.media.hda.name, storage: machine.media.hda.storage } : false;
+        }, 60000, diagnose);
+        assert.equal(attached.name, "long-mode-test.hdd");
+        assert.equal(attached.storage, "browser", "the image is kept in the page, not uploaded");
+    });
+
+    await test("the guest boots with the disk and its own script finds it", async () => {
+        await page.evaluate(() => document.getElementById("btn-start").click());
+        const serial = await wait_for(page, "the guest to come up with the disk",
+            () => {
+                const text = window.OpenxISO.serial_text();
+                return /Disk:\s+\/dev\/sda, \d+ MiB/.test(text) ? text : false;
+            }, options.timeout * 1000, diagnose);
+        assert.match(serial, /ata1: PATA max MWDMA2/, "the emulated PIIX3 IDE controller was found");
+        assert.match(serial, /sd 0:0:0:0: \[sda\] 131072 512-byte logical blocks/,
+            "the kernel sized the attached image itself");
+        assert.match(serial, /Disk:\s+\/dev\/sda, 64 MiB/, "the guest reported the disk it booted with");
+    });
+
+    await test("the guest reads the disk image that was dropped on it", async () => {
+        const image = fs.readFileSync(path.join(repo, "build", "emulator-tests", "long-mode-test.hdd"));
+        const expected = crypto.createHash("md5").update(image.subarray(0, 2048)).digest("hex");
+        await page.evaluate(() => {
+            document.getElementById("serial-input").value =
+                "dd if=/dev/sda bs=512 count=4 2>/dev/null | md5sum";
+            document.getElementById("serial-send").click();
+        });
+        const serial = await wait_for(page, "the guest to hash the start of the disk", wanted => {
+            const text = window.OpenxISO.serial_text();
+            return text.includes(wanted) ? text : false;
+        }, 60000, diagnose, expected);
+        assert.ok(serial.includes(expected),
+            "the first four sectors of the file came back through the emulated disk");
+    });
+
+    await test("the reset button brings the guest back", async () => {
+        // the engine's warm restart kills the emulator on a machine that was
+        // booted through the Linux boot protocol, so the app does a power cycle
+        // (see the limitations in emulator/README.md): the guest has to come up
+        // again, on the same disk
+        const before = await page.evaluate(() => window.OpenxISO.serial_text().length);
+        await page.evaluate(() => document.getElementById("btn-reset").click());
+        await page.waitForSelector("dialog.dialog", { visible: true });
+        await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll("dialog.dialog .dialog-footer .button"));
+            const ok = buttons.find(button => button.textContent.trim() === "OK");
+            (ok || buttons[buttons.length - 1]).click();
+        });
+        const serial = await wait_for(page, "the guest to boot again", length_before => {
+            const all = window.OpenxISO.serial_text();
+            // the serial panel is not cleared on a restart, so look at what came
+            // after the click (and at everything if the panel was cleared)
+            const text = all.length > length_before ? all.slice(length_before) : all;
+            return /Disk:\s+\/dev\/sda, 64 MiB/.test(text) && /openxiso:~#/.test(text) ? text : false;
+        }, options.timeout * 1000, diagnose, before);
+        assert.match(serial, /Run \/init as init process/,
+            "the guest went through a whole boot again");
+        assert.match(serial, /Disk:\s+\/dev\/sda, 64 MiB/, "the disk is still attached");
     });
 
     await test("the status bar follows the machine", async () => {
