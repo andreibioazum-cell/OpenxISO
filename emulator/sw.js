@@ -8,7 +8,7 @@
  * Bump CACHE_VERSION when files change; old caches are deleted on activation.
  */
 
-const CACHE_VERSION = "openxiso-v1";
+const CACHE_VERSION = "openxiso-v2";
 
 const APP_SHELL = [
     "./",

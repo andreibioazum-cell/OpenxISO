@@ -82,11 +82,14 @@ export class Machine {
      * @param {Object} machine machine definition (see machine.js)
      * @param {Object<string, Blob|undefined>} images kind -> image, e.g. {cdrom: File}
      * @param {HTMLElement} screen_container an element with a <canvas> and a <div>
-     * @param {{on_event?: function(string, ...*), volume?: number}=} options
+     * @param {{on_event?: function(string, ...*), volume?: number,
+     *          urls?: Object<string, {url: string, size?: number}>}=} options
      */
     constructor(machine, images, screen_container, options = {}) {
         this.machine = machine;
         this.images = images || {};
+        /** Images that are streamed from a URL with range requests. */
+        this.urls = options.urls || {};
         this.screen_container = screen_container;
         this.on_event = options.on_event || (() => {});
         this.volume = options.volume === undefined ? machine.audio.volume : options.volume;
@@ -150,6 +153,18 @@ export class Machine {
         for (const kind of ["cdrom", "hda", "hdb", "fda"]) {
             if (this.buffers[kind]) {
                 options[kind] = this.buffers[kind];
+            } else if (this.urls[kind]) {
+                // v86 reads these in 256 byte aligned blocks with Range
+                // requests, so a multi-gigabyte image on a server never has to
+                // be downloaded by the browser
+                options[kind] = {
+                    url: this.urls[kind].url,
+                    // undefined makes the engine ask the server for the size
+                    // with "Range: bytes=0-0"; 0 would mean "empty image"
+                    size: this.urls[kind].size || undefined,
+                    fixed_chunk_size: 256 * 1024,
+                    async: true,
+                };
             }
         }
 

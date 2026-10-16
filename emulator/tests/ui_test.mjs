@@ -402,6 +402,37 @@ async function main() {
         assert.equal(reads.images, 2, "the ISO is still attached");
     });
 
+    await test("an ISO can be streamed from a URL with range requests", async () => {
+        await click_when_enabled(page, "#btn-stop");
+        await wait_for(page, "the emulator to stop", () => !window.OpenxISO.state.machine, 30000, diagnose);
+
+        // the test server serves the repository, so the same ISO is reachable
+        // by URL: the engine then reads it with Range requests instead of
+        // copying it into the browser storage
+        const url = `http://127.0.0.1:${running.port}/build/emulator-tests/long-mode-test.iso`;
+        await page.evaluate(async (image_url) => {
+            window.OpenxISO.state.machines[0].media.hda = null;
+            await window.OpenxISO.attach_url("cdrom", image_url);
+            await window.OpenxISO.save_machine(window.OpenxISO.state.machines[0]);
+        }, url);
+
+        const storage = await page.evaluate(() =>
+            window.OpenxISO.state.machines[0].media.cdrom.storage);
+        assert.equal(storage, "url");
+
+        await click_when_enabled(page, "#btn-start");
+        await wait_for(page, "the machine to run", () => {
+            const machine = window.OpenxISO.state.machine;
+            return !!machine && machine.status === "running";
+        }, 60000, diagnose);
+
+        const serial = await wait_for(page, "the guest to boot from the URL", () => {
+            const text = window.OpenxISO.serial_text();
+            return text.split("v86-64 test: done").length > 3 ? text : false;
+        }, 120000, diagnose);
+        assert.match(serial, /long mode ok/);
+    });
+
     await test("the machine survives a reload of the page", async () => {
         await click_when_enabled(page, "#btn-stop");
         await wait_for(page, "the emulator to stop", () => !window.OpenxISO.state.machine, 30000, diagnose);
@@ -416,11 +447,13 @@ async function main() {
                 list: window.OpenxISO.state.machines.map(machine => machine.name),
                 stored: stored.length,
                 media: media.map(entry => entry.name).sort(),
+                url: window.OpenxISO.state.machines[0].media.cdrom.url,
             };
         });
         assert.equal(machines.stored, 1);
         assert.deepEqual(machines.list, ["Тестовая машина"]);
-        assert.deepEqual(machines.media, ["long-mode-test.hdd", "long-mode-test.iso"]);
+        assert.ok(machines.media.includes("long-mode-test.iso"));
+        assert.ok(machines.url, "the URL image is still attached after the reload");
     });
 
     await test("no errors were logged to the console", () => {

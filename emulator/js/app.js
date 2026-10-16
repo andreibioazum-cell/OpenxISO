@@ -11,7 +11,7 @@
 import { t, set_language, get_language, languages, translate_dom } from "./i18n.js";
 import { open_store, new_id, request_persistent_storage } from "./store.js";
 import {
-    create_machine, finalize_machine, attached_media, MEDIA_KINDS,
+    create_machine, finalize_machine, attached_media, is_url_media, MEDIA_KINDS,
 } from "./machine.js";
 import { Machine, EngineError, MEMORY64_SUPPORTED } from "./engine.js";
 import { Display } from "./display.js";
@@ -241,13 +241,25 @@ function render_details() {
 
 /* ------------------------------------------------------------- power actions */
 
+/**
+ * Collect what the engine needs for every attached medium: either the image
+ * itself (a Blob, from the store or from this session) or an URL to stream it
+ * from.
+ *
+ * @return {Promise<{images: Object, urls: Object, missing: Array<string>}>}
+ */
 async function images_of(machine) {
     const images = {};
+    const urls = {};
     const missing = [];
 
     for (const kind of Object.keys(MEDIA_KINDS)) {
         const reference = machine.media[kind];
         if (!reference) {
+            continue;
+        }
+        if (is_url_media(reference)) {
+            urls[kind] = { url: reference.url, size: reference.size };
             continue;
         }
         let blob = state.session_media.get(reference.id);
@@ -262,7 +274,7 @@ async function images_of(machine) {
         images[kind] = blob;
     }
 
-    return { images: images, missing: missing };
+    return { images: images, urls: urls, missing: missing };
 }
 
 async function start_machine() {
@@ -272,14 +284,14 @@ async function start_machine() {
     }
 
     state.last_error = null;
-    const { images, missing } = await images_of(machine);
+    const { images, urls, missing } = await images_of(machine);
     if (missing.length) {
         toast("Не найдены образы: " + missing.join(", ") + " — подключите их снова", "error");
         open_settings(machine);
         return;
     }
 
-    if (!images.cdrom && !images.hda && !images.hdb && !images.fda) {
+    if (!Object.keys(images).length && !Object.keys(urls).length) {
         toast("У машины нет образов: подключите ISO или образ диска", "error");
         open_settings(machine);
         return;
@@ -287,6 +299,7 @@ async function start_machine() {
 
     const engine = new Machine(machine, images, dom.screen_container, {
         volume: machine.audio.volume,
+        urls: urls,
         on_event: handle_engine_event,
     });
     state.machine = engine;
@@ -498,6 +511,7 @@ async function new_machine_wizard() {
 
     const media_handlers = {
         pick: kind => attach_media(machine, kind, () => rebuild()),
+        pick_url: kind => attach_media_url(machine, kind, () => rebuild()),
         eject: kind => eject_media(machine, kind, () => rebuild()),
         create_blank: kind => create_blank_disk(machine, kind, () => rebuild()),
         refresh: () => rebuild(),
@@ -705,6 +719,63 @@ async function attach_media(machine, kind, refresh) {
     update_status();
 }
 
+/**
+ * Attach an image that lives on a server. The emulator reads it with HTTP range
+ * requests, so a large ISO does not have to be downloaded or copied into the
+ * browser storage first.
+ */
+async function attach_media_url(machine, kind, refresh, preset_url) {
+    let url = preset_url;
+    let size = 0;
+
+    if (!url) {
+        const answer = await prompt_text({
+            title: t("attach_url"),
+            label: "https://… (ISO или образ диска)",
+            value: "",
+            ok: t("attach"),
+        });
+        if (!answer) {
+            return;
+        }
+        url = answer.trim();
+    }
+    if (!/^https?:\/\//i.test(url)) {
+        toast("Нужна ссылка http:// или https://", "error");
+        return;
+    }
+
+    // ask the server for the size; it also tells us early whether the URL works
+    try {
+        const response = await fetch(url, { method: "HEAD" });
+        size = parseInt(response.headers.get("content-length") || "0", 10);
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+    } catch (error) {
+        console.warn("cannot check the image:", error);
+        if (!await confirm("Не удалось проверить ссылку (" + (error && error.message || error) +
+                           "). Подключить всё равно?")) {
+            return;
+        }
+    }
+
+    const name = decodeURIComponent(url.split("/").pop() || "image.iso").split("?")[0];
+    machine.media[kind] = {
+        id: new_id("url-"),
+        name: name,
+        size: size,
+        url: url,
+        storage: "url",
+        writable: false,
+    };
+    await save_machine(machine);
+    refresh && refresh();
+    render_details();
+    update_status();
+    toast(`Образ подключён по ссылке: ${name}`, "success");
+}
+
 async function eject_media(machine, kind, refresh) {
     const reference = machine.media[kind];
     machine.media[kind] = null;
@@ -822,6 +893,7 @@ function open_settings(machine) {
 
     const media_handlers = {
         pick: kind => attach_media(machine, kind, () => refresh_page("media")),
+        pick_url: kind => attach_media_url(machine, kind, () => refresh_page("media")),
         eject: kind => eject_media(machine, kind, () => refresh_page("media")),
         create_blank: kind => create_blank_disk(machine, kind, () => refresh_page("media")),
         refresh: () => refresh_page("media"),
@@ -1149,6 +1221,23 @@ async function main() {
         }
     }
 
+    // ?demo=<url of an ISO> (or ?demo=1 for build/emulator-tests/long-mode-test.iso)
+    // creates a machine and boots it, which is handy for a quick look
+    const demo = new URLSearchParams(location.search).get("demo");
+    if (demo !== null) {
+        const url = demo === "" || demo === "1"
+            ? new URL("../build/emulator-tests/long-mode-test.iso", location.href).href
+            : demo;
+        const machine = create_machine({ name: "Демонстрация x86-64" });
+        machine.media.cdrom = { id: new_id("url-"), name: url.split("/").pop(), size: 0,
+                                url: url, storage: "url", writable: false };
+        finalize_machine(machine, "Демонстрация");
+        await save_machine(machine);
+        select_machine(machine.id);
+        toast("Демонстрационный образ: " + machine.media.cdrom.name);
+        await start_machine();
+    }
+
     window.addEventListener("beforeunload", event => {
         if (state.machine) {
             event.preventDefault();
@@ -1203,6 +1292,8 @@ const debug_api = {
         update_status();
         return reference;
     },
+    /** Attach an image that is streamed from a URL (range requests). */
+    attach_url: async (kind, url) => attach_media_url(selected_machine(), kind, null, url),
     /** Everything the guest printed on COM1 so far. */
     serial_text: () => (serial ? serial.text : ""),
     display: () => display,

@@ -68,7 +68,12 @@ export function create_machine(patch) {
             enabled: true,
         },
 
-        /** kind -> {id, name, size, storage: "browser"|"session", writable} */
+        /**
+         * kind -> media reference:
+         *   {id, name, size, storage: "browser"|"session", writable}
+         * or, for an image on a server,
+         *   {id, name, size, url, storage: "url"}
+         */
         media: {
             cdrom: null,
             hda: null,
@@ -140,6 +145,14 @@ export function media_summary(machine) {
     return attached.map(entry => entry.media.name).join(", ");
 }
 
+/**
+ * @param {Object} medium a media reference from machine.media
+ * @return {boolean} whether it is an image streamed from a URL
+ */
+export function is_url_media(medium) {
+    return !!(medium && medium.url);
+}
+
 /** Reset the timestamps and make sure a name exists. */
 export function finalize_machine(machine, fallback_name) {
     machine.name = (machine.name || "").trim() || fallback_name || "x86-64";
@@ -156,6 +169,6 @@ export const WASM_FILES = {
 
 export default {
     create_machine, merge_machine, boot_order_value, needs_memory64,
-    attached_media, media_summary, finalize_machine,
+    attached_media, media_summary, finalize_machine, is_url_media,
     BOOT_ORDERS, MEMORY_CHOICES, VRAM_CHOICES, MEDIA_KINDS, WASM_FILES,
 };

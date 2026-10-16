@@ -106,6 +106,11 @@ export function media_row(kind, machine, handlers) {
             text: media ? "Заменить…" : t("attach") + "…",
             onclick: () => handlers.pick(kind),
         }),
+        el("button.button.small", {
+            type: "button",
+            text: t("attach_url") + "…",
+            onclick: () => handlers.pick_url(kind),
+        }),
         media ? el("button.button.small", {
             type: "button",
             text: t("eject"),
@@ -150,6 +155,7 @@ export function media_page(machine, handlers) {
         for (const kind of ["cdrom", "hda", "hdb", "fda"]) {
             list.appendChild(media_row(kind, machine, {
                 pick: handlers.pick,
+                pick_url: handlers.pick_url || (() => {}),
                 eject: handlers.eject,
                 create_blank: handlers.create_blank,
                 refresh: refresh,
