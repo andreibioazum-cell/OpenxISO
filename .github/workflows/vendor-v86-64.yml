@@ -1,0 +1,118 @@
+# Builds the x86-64 (long mode) emulator core used by the web/Android app from
+# source and commits the resulting engine into a branch of this repository.
+#
+# The engine is the BSD-2-Clause fork <https://github.com/portlandhodl/v86_64>,
+# which adds 64-bit (long mode) support to v86: it can boot x86_64 Linux ISOs
+# (Alpine, Debian, Ubuntu live images) as well as every 32-bit guest v86 ran.
+#
+# A Rust compiler with the wasm32-unknown-unknown target, clang with wasm-ld,
+# Node.js and Java are needed to build it, so the build runs here and the
+# binaries are committed (see emulator/vendor/README.md for the provenance of
+# the files that are already checked in).
+#
+# Run it from the Actions tab ("Run workflow") or with:
+#   gh workflow run vendor-v86-64.yml --ref <branch>
+name: Vendor v86_64 engine
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: v86_64 commit, tag or branch to build
+        required: false
+        default: c394574477b57eadfc859f593b4aecb08fa37cb6
+      target_branch:
+        description: Branch that receives the built engine
+        required: false
+        default: engine/v86_64
+      out_dir:
+        description: Directory to write the engine to
+        required: false
+        default: emulator/vendor/v86_64
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and commit engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      REF: ${{ inputs.ref }}
+      OUT_DIR: ${{ inputs.out_dir }}
+      TARGET_BRANCH: ${{ inputs.target_branch }}
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add wasm32-unknown-unknown
+          rustc --version
+
+      - name: Install wasm toolchain
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang lld
+          clang --version | head -n 1
+
+      - name: Fetch v86_64 source
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/portlandhodl/v86_64.git "$RUNNER_TEMP/v86_64"
+          cd "$RUNNER_TEMP/v86_64"
+          git checkout --quiet "$REF"
+          echo "building $(git rev-parse HEAD)"
+          git rev-parse HEAD > "$RUNNER_TEMP/v86_64_commit"
+
+      - name: Build engine
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/v86_64"
+          # Guests with up to 3 GiB of RAM use v86.wasm; more needs the mem64
+          # build, which requires WebAssembly memory64 in the browser.
+          make all build/v86-fallback.wasm
+          ls -l build/*.wasm build/libv86.js build/libv86.mjs
+
+      - name: Assemble engine directory
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/v86_64"
+          mkdir -p "$GITHUB_WORKSPACE/$OUT_DIR"
+          cp build/libv86.mjs build/libv86.js \
+             build/v86.wasm build/v86-mem64.wasm build/v86-fallback.wasm \
+             "$GITHUB_WORKSPACE/$OUT_DIR/"
+          cp bios/seabios.bin bios/vgabios.bin "$GITHUB_WORKSPACE/$OUT_DIR/"
+          cp LICENSE "$GITHUB_WORKSPACE/$OUT_DIR/LICENSE.v86_64"
+          cp LICENSE.MIT "$GITHUB_WORKSPACE/$OUT_DIR/LICENSE.v86_64.MIT"
+          cp bios/COPYING.LESSER "$GITHUB_WORKSPACE/$OUT_DIR/LICENSE.seabios"
+          cd "$GITHUB_WORKSPACE/$OUT_DIR"
+          {
+            echo "v86_64 — x86-64 PC emulator and x86-to-wasm JIT (64-bit fork of v86)"
+            echo "upstream: https://github.com/portlandhodl/v86_64"
+            echo "commit:   $(cat "$RUNNER_TEMP/v86_64_commit")"
+            echo "built:    $(date -u +%Y-%m-%dT%H:%M:%SZ) on GitHub Actions (ubuntu-latest)"
+            echo "rust:     $(rustc --version)"
+            echo "clang:    $(clang --version | head -n 1)"
+            echo ""
+            echo "sha256:"
+          } > BUILD_INFO.txt
+          sha256sum *.wasm *.mjs *.js *.bin >> BUILD_INFO.txt
+          cat BUILD_INFO.txt
+
+      - name: Commit engine
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$TARGET_BRANCH"
+          git add "$OUT_DIR"
+          git commit -m "Vendor v86_64 engine built from $(cat "$RUNNER_TEMP/v86_64_commit")"
+          git push --force origin "HEAD:$TARGET_BRANCH"
