@@ -29,6 +29,12 @@ on:
         description: Directory to write the engine to
         required: false
         default: emulator/vendor/v86_64
+  # A push that touches .github/engine-build-request rebuilds the engine, so a
+  # rebuild can be requested from a branch without the Actions UI. The file
+  # contains the v86_64 commit to build.
+  push:
+    paths:
+      - .github/engine-build-request
 
 permissions:
   contents: write
@@ -45,6 +51,22 @@ jobs:
     steps:
       - name: Checkout this repository
         uses: actions/checkout@v4
+
+      - name: Resolve build parameters
+        run: |
+          set -euo pipefail
+          if [ -z "${REF:-}" ] && [ -f .github/engine-build-request ]; then
+            REF="$(tr -d '[:space:]' < .github/engine-build-request)"
+          fi
+          : "${REF:=c394574477b57eadfc859f593b4aecb08fa37cb6}"
+          : "${OUT_DIR:=emulator/vendor/v86_64}"
+          : "${TARGET_BRANCH:=engine/v86_64}"
+          {
+            echo "REF=$REF"
+            echo "OUT_DIR=$OUT_DIR"
+            echo "TARGET_BRANCH=$TARGET_BRANCH"
+          } >> "$GITHUB_ENV"
+          echo "building v86_64 ref $REF into $OUT_DIR on $TARGET_BRANCH"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
