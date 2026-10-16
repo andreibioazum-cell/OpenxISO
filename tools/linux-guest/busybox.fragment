@@ -1,0 +1,43 @@
+# BusyBox options that the guest image needs on top of `make defconfig`.
+#
+# One bare symbol name per line, for boolean options that defconfig leaves off;
+# build.py turns every "# CONFIG_X is not set" into "CONFIG_X=y" and reports the
+# names that are not boolean options of this BusyBox (that is why the string
+# options, such as FEATURE_EDITING_HISTORY, cannot be listed here).
+#
+# CONFIG_STATIC is what makes the image work at all: the initramfs has no shared
+# libraries in it, so busybox has to be linked against libc statically.
+CONFIG_STATIC
+
+# init, the shell and the shell's conveniences
+CONFIG_INIT
+CONFIG_ASH
+CONFIG_ASH_JOB_CONTROL
+CONFIG_FEATURE_EDITING
+CONFIG_FEATURE_EDITING_FANCY_PROMPT
+CONFIG_FEATURE_TAB_COMPLETION
+
+# device nodes for /dev (the kernel mounts devtmpfs, mdev covers the rest)
+CONFIG_MDEV
+
+# a login prompt and enough tools to look around with
+CONFIG_GETTY
+CONFIG_VI
+CONFIG_LESS
+CONFIG_FIND
+CONFIG_GREP
+CONFIG_DF
+CONFIG_FREE
+CONFIG_TOP
+CONFIG_UNAME
+CONFIG_HOSTNAME
+CONFIG_DMESG
+CONFIG_CLEAR
+
+# shutting the guest down from the inside
+CONFIG_POWEROFF
+CONFIG_REBOOT
+CONFIG_HALT
+CONFIG_SYNC
+CONFIG_SLEEP
+CONFIG_PRINTENV

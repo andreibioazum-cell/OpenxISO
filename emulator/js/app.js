@@ -12,13 +12,15 @@ import { t, set_language, get_language, languages, translate_dom } from "./i18n.
 import { open_store, new_id, request_persistent_storage } from "./store.js";
 import {
     create_machine, finalize_machine, attached_media, is_url_media, MEDIA_KINDS,
+    DEFAULT_KERNEL_CMDLINE,
 } from "./machine.js";
 import { Machine, EngineError, MEMORY64_SUPPORTED } from "./engine.js";
 import { Display } from "./display.js";
 import { SerialConsole } from "./serial.js";
 import { OnScreenKeyboard } from "./keyboard.js";
 import {
-    pick_files, guess_kind, format_bytes, storage_info, can_store, download_blob,
+    pick_files, guess_kind, looks_like_kernel, format_bytes, storage_info, can_store,
+    download_blob,
     make_drop_target, blob_as_file,
 } from "./files.js";
 import { blank_image } from "./media.js";
@@ -1096,18 +1098,37 @@ function bind_serial_panel() {
     });
 }
 
+/**
+ * What kind of image was dropped on the workspace?  The file name decides most
+ * of it; a Linux kernel is recognised by its own header instead, so a file
+ * called image.bin or kernel still boots as a kernel.
+ *
+ * @param {File} file
+ * @return {Promise<string>} "iso" | "hdd" | "floppy" | "kernel"
+ */
+async function classify_drop(file) {
+    const named = guess_kind(file);
+    if (named === "kernel") {
+        return "kernel";
+    }
+    return (await looks_like_kernel(file)) ? "kernel" : named;
+}
+
 function bind_drop_target() {
     make_drop_target(dom.workspace, {
         on_hover: hover => dom.drop_overlay.classList.toggle("visible", hover),
         on_files: async files => {
             const file = files[0];
-            const kind = guess_kind(file);
+            const kind = await classify_drop(file);
             const machine = selected_machine();
             if (!machine) {
                 toast("Сначала создайте машину", "error");
                 return;
             }
-            const media_kind = kind === "iso" ? "cdrom" : kind === "floppy" ? "fda" : "hda";
+            const media_kind = kind === "iso" ? "cdrom"
+                : kind === "floppy" ? "fda"
+                : kind === "kernel" ? "kernel"
+                : "hda";
             const reference = await store_media(file, media_kind);
             machine.media[media_kind] = reference;
             await save_machine(machine);
@@ -1239,30 +1260,42 @@ async function main() {
         }
     }
 
-    // ?demo=<url of an ISO> (or ?demo=1 / ?demo=gfx for the test images in
-    // build/emulator-tests) creates a machine and boots it, which is handy for
-    // a quick look at the emulator without attaching anything by hand
+    // ?demo=<url of an ISO or of a kernel> (or ?demo=1 / ?demo=gfx / ?demo=linux
+    // for the images that ship with the repository) creates a machine and boots
+    // it, which is handy for a quick look at the emulator without attaching
+    // anything by hand.  ?demo=linux boots the real Linux guest image from
+    // emulator/images, which needs nothing else at all.
     const demo = new URLSearchParams(location.search).get("demo");
     if (demo !== null) {
         const images = {
-            "": "long-mode-test.iso",
-            "1": "long-mode-test.iso",
-            "iso": "long-mode-test.iso",
-            "2": "long-mode-gfx-test.iso",
-            "gfx": "long-mode-gfx-test.iso",
+            "": { kind: "cdrom", file: "long-mode-test.iso" },
+            "1": { kind: "cdrom", file: "long-mode-test.iso" },
+            "iso": { kind: "cdrom", file: "long-mode-test.iso" },
+            "2": { kind: "cdrom", file: "long-mode-gfx-test.iso" },
+            "gfx": { kind: "cdrom", file: "long-mode-gfx-test.iso" },
+            "64": { kind: "kernel", dir: "images/", file: "linux-6.6-x86_64.bzImage" },
+            "linux": { kind: "kernel", dir: "images/", file: "linux-6.6-x86_64.bzImage" },
         };
-        const url = demo in images
-            ? new URL("../build/emulator-tests/" + images[demo], location.href).href
+        const known = images[demo];
+        const url = known
+            ? new URL((known.dir || "../build/emulator-tests/") + known.file, location.href).href
             : demo;
         const machine = create_machine({ name: "Демонстрация x86-64" });
-        machine.media.cdrom = {
+        const kind = known ? known.kind : "cdrom";
+        machine.media[kind] = {
             id: new_id("url-"), name: url.split("/").pop(), size: await probe_size(url),
             url: url, storage: "url", writable: false,
         };
+        if (kind === "kernel") {
+            // a kernel boot wants a bit of memory and a command line; 64 MiB
+            // would be enough, but 512 MiB leaves room for a big initramfs
+            machine.system.memory_mb = Math.max(machine.system.memory_mb, 512);
+            machine.system.cmdline = DEFAULT_KERNEL_CMDLINE;
+        }
         finalize_machine(machine, "Демонстрация");
         await save_machine(machine);
         select_machine(machine.id);
-        toast("Демонстрационный образ: " + machine.media.cdrom.name);
+        toast("Демонстрационный образ: " + machine.media[kind].name);
         await start_machine();
     }
 

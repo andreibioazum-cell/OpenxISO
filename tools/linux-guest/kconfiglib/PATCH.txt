@@ -1,0 +1,31 @@
+kconfiglib.py in this directory is kconfiglib 14.1.0 (by Ulf Magnusson,
+https://pypi.org/project/kconfiglib/, ISC licence - see the licence text at the
+top of the file) with exactly one change, needed for Linux 6.6:
+
+    --- a/kconfiglib.py
+    +++ b/kconfiglib.py
+    @@ -3262,6 +3262,15 @@
+    +            elif t0 is _T_MODULES:
+    +                # Bare 'modules' property, introduced in Linux 6.6 (it used
+    +                # to be spelled 'option modules').  Kconfiglib assumes the
+    +                # modules symbol is called MODULES, which is what the kernel
+    +                # uses, so there is nothing to do here.
+    +                if node.item.__class__ is not Symbol:
+    +                    self._parse_error("the 'modules' property is only valid "
+    +                                      "for symbols")
+    +
+                 elif t0 is _T_OPTIONAL:
+                     if node.item.__class__ is not Choice:
+
+Rationale: kernel/module/Kconfig uses the bare `modules` property, which
+kconfiglib 14.1.0 only accepts as `option modules`, so without this hunk
+`Kconfig` cannot be parsed at all.  The change is a no-op for the resulting
+configuration because kconfiglib hard-codes MODULES as the modules symbol,
+which is what the kernel uses.
+
+To recreate the file from PyPI instead of using the copy here:
+
+    pip download --no-deps -d /tmp/kcl kconfiglib     # 14.1.0
+    python3 -m zipfile -e /tmp/kcl/kconfiglib-*.whl /tmp/kcl/x
+    cp /tmp/kcl/x/kconfiglib.py tools/linux-guest/kconfiglib/
+    # then apply the hunk above

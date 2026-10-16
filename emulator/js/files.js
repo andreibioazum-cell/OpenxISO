@@ -53,8 +53,38 @@ function without_extension(name) {
  * @param {File|Blob} file
  * @return {"iso"|"hdd"|"floppy"}
  */
+/** Names that give away a Linux kernel image. */
+const KERNEL_NAME = /(^|[^a-z])(bzimage|vmlinuz)([^a-z]|$)/;
+
+/**
+ * Does this file look like a Linux bzImage?  A bootable kernel image carries
+ * the boot signature at 0x1FE and "HdrS" at 0x202, which is what the engine's
+ * own kernel loader checks before it boots one, so a file with an unusual name
+ * (image.bin, kernel, ...) is still recognised as a kernel.
+ *
+ * @param {File|Blob} file
+ * @return {Promise<boolean>}
+ */
+export async function looks_like_kernel(file) {
+    if (!file || typeof file.slice !== "function" || file.size < 0x210) {
+        return false;
+    }
+    const head = new DataView(await file.slice(0, 0x210).arrayBuffer());
+    if (head.getUint16(0x1fe, true) !== 0xaa55) {
+        return false;
+    }
+    const magic = [0x202, 0x203, 0x204, 0x205]
+        .map(offset => String.fromCharCode(head.getUint8(offset))).join("");
+    const protocol = head.getUint16(0x206, true);
+    // "HdrS" and protocol 2.02 or newer: what load_kernel() in the engine wants
+    return magic === "HdrS" && protocol >= 0x0202;
+}
+
 export function guess_kind(file) {
     const name = (file.name || "").toLowerCase();
+    if (KERNEL_NAME.test(name) || name.endsWith(".bzimage")) {
+        return "kernel";
+    }
     if (name.endsWith(".iso") || name.endsWith(".cdr") || name.endsWith(".dmg")) {
         return "iso";
     }
@@ -182,6 +212,6 @@ export function blob_as_file(blob, name) {
 export { without_extension };
 
 export default {
-    pick_files, guess_kind, format_bytes, storage_info, can_store,
+    pick_files, guess_kind, looks_like_kernel, format_bytes, storage_info, can_store,
     download_blob, make_drop_target, blob_as_file, AUTO_STORE_LIMIT,
 };

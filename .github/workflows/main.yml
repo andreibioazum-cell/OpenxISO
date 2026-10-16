@@ -40,6 +40,7 @@ jobs:
           test -f emulator/vendor/v86_64/libv86.mjs
           test -f emulator/vendor/v86_64/v86.wasm
           test -f emulator/vendor/v86_64/seabios.bin
+          test -f emulator/images/linux-6.6-x86_64.bzImage
           test -f platform/android/java/com/cb4/EmulatorActivity.java
           test -f platform/android/java/com/cb4/EmulatorServer.java
           grep -q 'android:versionCode="[0-9]\+"' platform/android/AndroidManifest.xml
@@ -59,6 +60,7 @@ jobs:
           node emulator/tests/unit_test.mjs
           python3 emulator/tests/make_test_images.py
           node emulator/tests/boot_test.mjs
+          node emulator/tests/linux_test.mjs
 
       - name: Check native game sources
         run: |
@@ -124,7 +126,9 @@ jobs:
           set -euo pipefail
           rm -rf staging/emulator
           mkdir -p staging/emulator
-          for item in index.html manifest.webmanifest sw.js css js icons vendor; do
+          # "images" is the guest kernel image of the ?demo=linux machine, so
+          # the Android build can boot a real Linux without a network
+          for item in index.html manifest.webmanifest sw.js css js icons vendor images; do
             cp -r "emulator/$item" staging/emulator/
           done
           du -sh staging/emulator

@@ -11,13 +11,14 @@ import { t } from "./i18n.js";
 import { format_bytes } from "./files.js";
 import {
     MEDIA_KINDS, MEMORY_CHOICES, MAX_MEMORY_STANDARD, VRAM_CHOICES,
-    attached_media, needs_memory64,
+    attached_media, needs_memory64, DEFAULT_KERNEL_CMDLINE,
 } from "./machine.js";
 import { MEMORY64_SUPPORTED } from "./engine.js";
 import { checkbox, el, field, select } from "./ui.js";
 
 /** How the media kinds are called in the UI. */
 export const MEDIA_LABELS = {
+    kernel: "kernel",
     cdrom: "cdrom",
     hda: "hdd",
     hdb: "hdd2",
@@ -61,6 +62,15 @@ export function system_page(machine) {
         { value: "floppy", label: t("boot_floppy") },
     ], machine.system.boot_order, value => { machine.system.boot_order = value; });
 
+    // the command line only matters for a kernel boot (media.kernel), but it
+    // is part of the system, not of a medium, so it lives on this page
+    const cmdline = el("input.input", {
+        type: "text", spellcheck: "false", autocomplete: "off",
+        placeholder: DEFAULT_KERNEL_CMDLINE,
+        value: machine.system.cmdline || "",
+        oninput: event => { machine.system.cmdline = event.target.value.trim(); },
+    });
+
     const acpi = checkbox(t("acpi"), machine.system.acpi, value => { machine.system.acpi = value; });
     const fastboot = checkbox(t("fastboot"), machine.system.fastboot,
         value => { machine.system.fastboot = value; });
@@ -70,6 +80,7 @@ export function system_page(machine) {
         memory_hint,
         field(t("vram"), vram),
         field(t("boot_order"), boot),
+        field(t("cmdline"), cmdline, t("cmdline_hint")),
         el("div.page-row", {}, [acpi, fastboot]),
         el("div.engine-info", {}, [
             el("strong", { text: t("engine_name") }),
@@ -116,7 +127,7 @@ export function media_row(kind, machine, handlers) {
             text: t("eject"),
             onclick: () => handlers.eject(kind),
         }) : null,
-        kind !== "cdrom" ? el("button.button.small", {
+        kind !== "cdrom" && kind !== "kernel" ? el("button.button.small", {
             type: "button",
             text: t("create_blank") + "…",
             onclick: () => handlers.create_blank(kind),
@@ -130,6 +141,12 @@ export function media_row(kind, machine, handlers) {
         ]),
         buttons,
     ]);
+
+    if (kind === "kernel") {
+        details.appendChild(el("div.media-hint", {}, [
+            el("span.field-hint", { text: t("kernel_hint") }),
+        ]));
+    }
 
     if (media) {
         details.appendChild(el("div.media-write", {}, [
@@ -152,7 +169,9 @@ export function media_page(machine, handlers) {
 
     const refresh = () => {
         list.replaceChildren();
-        for (const kind of ["cdrom", "hda", "hdb", "fda"]) {
+        // the kernel image first: it is what makes the machine boot a real
+        // Linux kernel straight from the phone's storage
+        for (const kind of ["kernel", "cdrom", "hda", "hdb", "fda"]) {
             list.appendChild(media_row(kind, machine, {
                 pick: handlers.pick,
                 pick_url: handlers.pick_url || (() => {}),

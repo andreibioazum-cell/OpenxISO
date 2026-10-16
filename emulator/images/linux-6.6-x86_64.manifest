@@ -1,0 +1,13 @@
+OpenxISO 64-bit Linux guest image
+=================================
+
+kernel:    Linux 6.6 (x86-64), from https://codeload.github.com/torvalds/linux/tar.gz/refs/tags/v6.6
+userland:  BusyBox 1.36.1 (static, glibc), from https://codeload.github.com/mirror/busybox/tar.gz/refs/tags/1_36_1
+config:    tools/linux-guest/config.fragment, resolved with make syncconfig
+patches:   tools/linux-guest/patches.py (build environment only)
+engine:    emulator/vendor/v86_64, booted through the Linux boot protocol
+cmdline:   console=tty0 console=ttyS0,115200
+
+files:
+  linux-6.6-x86_64.bzImage                 2698496 bytes  sha256 9a403daa728e9515aacff0487c4eb0a805547389b8127c40f09806d721a62578
+  linux-6.6-x86_64.config                    35811 bytes  sha256 52edc261c67eab072283c698dd37e8402e4a8172151298c50c01670a9b92168f

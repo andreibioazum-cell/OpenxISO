@@ -1,0 +1,35 @@
+#!/bin/sh
+# Early userland bring-up for the OpenxISO 64-bit guest image.
+#
+# The kernel runs /init as PID 1; /init is a link to BusyBox, so PID 1 is
+# BusyBox's init applet, which runs this script as the "sysinit" step of
+# /etc/inittab and then starts the shells listed there.
+
+# the mount points have to exist before they can be mounted; the skeleton
+# ships them, but creating them is cheap and makes the image robust
+mkdir -p /dev /proc /sys /tmp
+
+mount -t devtmpfs dev /dev 2>/dev/null
+mount -t proc     proc  /proc
+mount -t sysfs    sysfs /sys
+mount -t tmpfs -o size=32m tmpfs /tmp
+[ -d /dev/pts ] && mount -t devpts devpts /dev/pts
+
+hostname openxiso
+
+KERNEL=$(uname -r)
+ARCH=$(uname -m)
+CPU=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -n 1)
+MEM=$(sed -n 's/^MemTotal:[[:space:]]*//p' /proc/meminfo)
+DISKS=$(ls /dev/hd? /dev/sd? /dev/vd? 2>/dev/null | tr '\n' ' ')
+
+echo
+echo "OpenxISO guest: Linux $KERNEL on $ARCH"
+[ -n "$CPU" ]  && echo "CPU:    $CPU"
+[ -n "$MEM" ]  && echo "Memory: $MEM"
+[ -n "$DISKS" ] && echo "Disks:  $DISKS"
+echo "Root:   initramfs (the kernel image has the busybox userland built in)"
+echo
+echo "Shells: ttyS0 (this line) and tty1 (the emulated screen)."
+echo "Try: uname -a, cat /proc/cpuinfo, free, ls /bin, help"
+echo

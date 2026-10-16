@@ -12,6 +12,9 @@
  *                            framebuffer and drew its colour bands
  *   screenshot-phone.png     the phone layout (a running machine, no details)
  *   screenshot-wizard.png    the "new machine" wizard on the media page
+ *   screenshot-linux.png     the real Linux 6.6 guest (see emulator/images),
+ *                            booted from the kernel image, with its BusyBox
+ *                            shell answering on COM1
  *
  * Usage:
  *     python3 emulator/tests/make_test_images.py      # the images it boots
@@ -102,6 +105,13 @@ async function main() {
         }
     }
 
+    const kernel = path.join(repo, "emulator", "images", "linux-6.6-x86_64.bzImage");
+    if (!fs.existsSync(kernel)) {
+        console.error(`error: ${kernel} is missing`);
+        console.error("hint: run python3 tools/linux-guest/build.py first");
+        process.exit(2);
+    }
+
     const puppeteer = await load_puppeteer();
     const running = await serve({ port: options.port, quiet: true });
     const base = `http://127.0.0.1:${running.port}/emulator`;
@@ -167,6 +177,33 @@ async function main() {
     await sleep(400);
     await shot(wizard, "screenshot-wizard.png");
     console.log("screenshot-wizard.png");
+
+    // 5. the real thing: Linux 6.6 for x86-64, booted from the kernel image in
+    //    emulator/images, with its BusyBox shell answering on COM1
+    const linux = await open_app(browser, base, { width: 1280, height: 860 }, "?nosw&demo=linux");
+    await linux.waitForFunction(
+        () => window.OpenxISO.serial_text().includes("openxiso:~#"),
+        { timeout: 300000 });
+    await linux.click("#btn-serial");
+    await linux.evaluate(() => {
+        const send = text => {
+            document.getElementById("serial-input").value = text;
+            document.getElementById("serial-send").click();
+        };
+        send("uname -a");
+        send("cat /proc/cpuinfo | head -8");
+    });
+    await linux.waitForFunction(
+        () => window.OpenxISO.serial_text().includes("x86_64 GNU/Linux"),
+        { timeout: 60000 });
+    await sleep(1500);
+    await linux.evaluate(() => {
+        const output = document.getElementById("serial-output");
+        output.scrollTop = output.scrollHeight;
+    });
+    await sleep(800);
+    await shot(linux, "screenshot-linux.png");
+    console.log("screenshot-linux.png");
 
     await browser.close();
     await running.close();

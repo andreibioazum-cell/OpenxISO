@@ -14,7 +14,10 @@
  */
 
 import { BLOCK_SIZE, BlobBuffer } from "./media.js";
-import { MAX_MEMORY_STANDARD, boot_order_value, needs_memory64, WASM_FILES } from "./machine.js";
+import {
+    MAX_MEMORY_STANDARD, boot_order_value, needs_memory64, WASM_FILES,
+    DEFAULT_KERNEL_CMDLINE,
+} from "./machine.js";
 
 /** How much of an image the read cache keeps before evicting. */
 const MEDIA_CACHE = 64 * 1024 * 1024;
@@ -122,7 +125,8 @@ export class Machine {
 
         this.buffers = {};
         for (const [kind, blob] of Object.entries(this.images)) {
-            if (blob) {
+            // the kernel is not a block device: the engine wants its bytes
+            if (blob && kind !== "kernel") {
                 this.buffers[kind] = media_buffer(blob, { name: (machine.media[kind] || {}).name || kind });
             }
         }
@@ -166,6 +170,24 @@ export class Machine {
                     async: true,
                 };
             }
+        }
+
+        // A kernel image is booted through the Linux boot protocol: the engine
+        // takes the raw bytes of the bzImage plus the machine's command line,
+        // and it does not matter what else is attached to the machine.
+        if (this.images.kernel) {
+            options.bzimage = new Uint8Array(await this.images.kernel.arrayBuffer());
+        } else if (this.urls.kernel) {
+            // read it here instead of letting the engine do a synchronous
+            // request: a kernel is a few megabytes and the tab would freeze
+            const response = await fetch(this.urls.kernel.url);
+            if (!response.ok) {
+                throw new EngineError(`the kernel image could not be loaded (${response.status})`);
+            }
+            options.bzimage = new Uint8Array(await response.arrayBuffer());
+        }
+        if (options.bzimage) {
+            options.cmdline = machine.system.cmdline || DEFAULT_KERNEL_CMDLINE;
         }
 
         if (machine.network.device && machine.network.device !== "none") {

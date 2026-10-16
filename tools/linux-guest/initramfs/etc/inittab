@@ -1,0 +1,13 @@
+# /etc/inittab for the OpenxISO 64-bit guest image.
+#
+# Two consoles get a shell: ttyS0 (the emulator's serial line, also usable from
+# the web UI's serial panel) and tty1 (the VGA text console on the emulated
+# screen, where the emulator's keyboard and captured mouse land).
+
+::sysinit:/etc/init.d/rcS
+
+ttyS0::respawn:-/bin/sh
+tty1::respawn:-/bin/sh
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r

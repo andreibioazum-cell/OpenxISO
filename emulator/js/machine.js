@@ -9,6 +9,13 @@
 
 import { new_id } from "./store.js";
 
+/**
+ * The command line used for a kernel boot (media.kernel) when the machine does
+ * not set one. The kernel prints to the emulated screen and to COM1, so both
+ * the VM window and the serial console in the UI show the boot log.
+ */
+export const DEFAULT_KERNEL_CMDLINE = "console=tty0 console=ttyS0,115200";
+
 /** Boot orders as the BIOS expects them (see const.js in v86: 0x123 = CD first). */
 export const BOOT_ORDERS = {
     cd: 0x123,      // CD-ROM, then hard disk
@@ -25,6 +32,13 @@ export const VRAM_CHOICES = [4, 8, 16, 32, 64, 128];
 /** Image kinds and what the file picker accepts for them. */
 export const MEDIA_KINDS = {
     cdrom: { accept: ".iso,.img,.bin,application/x-iso9660-image", optional: true },
+    /**
+     * A Linux kernel image (bzImage/vmlinuz). The engine boots it through the
+     * Linux boot protocol instead of looking for a boot sector on a disk, so a
+     * kernel file picked from the phone's storage boots straight into the
+     * kernel's own initramfs, with no ISO or disk image needed at all.
+     */
+    kernel: { accept: ".bzimage,.img,.bin,.elf,.vmlinuz,application/octet-stream", optional: true },
     hda: { accept: ".hdd,.img,.raw,.vhd,.qcow,.bin", optional: true },
     hdb: { accept: ".hdd,.img,.raw,.bin", optional: true },
     fda: { accept: ".img,.ima,.flp,.bin", optional: true },
@@ -47,6 +61,9 @@ export function create_machine(patch) {
             boot_order: "cd",
             acpi: true,
             fastboot: true,
+
+            /** command line for a kernel boot (media.kernel), "" = the default */
+            cmdline: "",
         },
 
         audio: {
@@ -75,6 +92,7 @@ export function create_machine(patch) {
          *   {id, name, size, url, storage: "url"}
          */
         media: {
+            kernel: null,
             cdrom: null,
             hda: null,
             hdb: null,
@@ -138,11 +156,11 @@ export function attached_media(machine) {
  * @return {string}
  */
 export function media_summary(machine) {
-    const attached = attached_media(machine);
-    if (!attached.length) {
-        return "";
+    const names = attached_media(machine).map(entry => entry.media.name);
+    if (machine.media.kernel) {
+        names.unshift(machine.media.kernel.name);
     }
-    return attached.map(entry => entry.media.name).join(", ");
+    return names.join(", ");
 }
 
 /**
@@ -171,4 +189,5 @@ export default {
     create_machine, merge_machine, boot_order_value, needs_memory64,
     attached_media, media_summary, finalize_machine, is_url_media,
     BOOT_ORDERS, MEMORY_CHOICES, VRAM_CHOICES, MEDIA_KINDS, WASM_FILES,
+    DEFAULT_KERNEL_CMDLINE,
 };
