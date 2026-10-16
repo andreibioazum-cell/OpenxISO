@@ -252,12 +252,40 @@ async function main() {
 
     console.log("\nbooting the ISO in the browser");
 
-    await test("the guest boots into 64-bit long mode", async () => {
+    await test("the guest boots into 64-bit long mode and takes the input", async () => {
         await click_when_enabled(page, "#btn-start");
         await wait_for(page, "the machine to run", () => {
             const machine = window.OpenxISO.state.machine;
             return !!machine && machine.status === "running";
         }, 60000, diagnose);
+
+        // The guest installs an IDT, programs the PIT and the PS/2 controller
+        // and then waits two seconds for timer ticks: the input below has to
+        // arrive inside that window, otherwise the guest has already stopped.
+        await wait_for(page, "the guest to be ready for input", () =>
+            window.OpenxISO.serial_text().includes("irq test ready"), 120000, diagnose);
+
+        // VirtualBox style capturing: clicking the screen locks the pointer, so
+        // that moving the mouse only moves the guest pointer.
+        const box = await page.$eval("#screen_container", element => {
+            const rect = element.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        });
+        assert.ok(box.width > 100 && box.height > 100, "the screen has a size");
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        const captured = await page.waitForFunction(() => {
+            const container = document.getElementById("screen_container");
+            return !!document.pointerLockElement ||
+                container.classList.contains("virtual-mouse");
+        }, { timeout: 15000 }).then(() => true).catch(() => false);
+        assert.equal(captured, true, "the click captured the mouse (pointer lock or virtual mouse)");
+
+        // now type and move the mouse like a user would
+        await page.keyboard.press("a");
+        for (let step = 0; step < 4; step++) {
+            await page.mouse.move(box.x + 120 + step * 25, box.y + 90 + step * 15);
+            await new Promise(resolve => setTimeout(resolve, 40));
+        }
 
         const serial = await wait_for(page, "the guest transcript", () => {
             const text = window.OpenxISO.serial_text();
@@ -270,7 +298,33 @@ async function main() {
         assert.match(serial, /entering long mode/);
         assert.match(serial, /long mode ok/);
         assert.match(serial, /sum=edcba9777777778f nibble=e low=000000007777778f/);
+        assert.match(serial, /irq test ready/);
         assert.match(serial, /done/);
+
+        // the make and the break code of "a" (0x1e / 0x9e) reached the guest
+        // through the emulated PS/2 controller, and so did mouse movements
+        assert.match(serial, /key 1e/);
+        assert.match(serial, /key 9e/);
+        assert.match(serial, /mouse [0-9a-f]{2}/);
+        const counters = /irq keyboard=([0-9a-f]{16}) mouse=([0-9a-f]{16}) ticks=([0-9a-f]{16})/.exec(serial);
+        assert.ok(counters, "the guest reported its interrupt counters");
+        assert.ok(parseInt(counters[1], 16) >= 2, "the keyboard sent scancodes");
+        assert.ok(parseInt(counters[2], 16) >= 3, "the mouse sent at least one packet");
+        assert.ok(parseInt(counters[3], 16) >= 200, "the PIT delivered its ticks");
+    });
+
+    await test("Escape releases the captured mouse again", async () => {
+        // The toolbar has to be usable again after the guest had the mouse: the
+        // browser releases the pointer when Escape is pressed while it is
+        // locked, and the app shows the capture hint again.
+        await page.keyboard.press("Escape");
+        const released = await page.waitForFunction(() => !document.pointerLockElement, { timeout: 10000 })
+            .then(() => true).catch(() => false);
+        if (!released) {
+            await page.evaluate(() => document.exitPointerLock && document.exitPointerLock());
+        }
+        const locked = await page.evaluate(() => !!document.pointerLockElement);
+        assert.equal(locked, false, "the pointer is not locked any more");
     });
 
     await test("the screen really shows the guest text mode output", async () => {
@@ -431,6 +485,65 @@ async function main() {
             return text.split("v86-64 test: done").length > 3 ? text : false;
         }, 120000, diagnose);
         assert.match(serial, /long mode ok/);
+    });
+
+    await test("the guest paints a VBE framebuffer and the window shows it", async () => {
+        await click_when_enabled(page, "#btn-stop");
+        await wait_for(page, "the emulator to stop", () => !window.OpenxISO.state.machine, 30000, diagnose);
+
+        // the graphics build of the test program: it finds the framebuffer
+        // through the PCI BAR, programs the Bochs VBE registers for 640x480x32
+        // and draws three colour bands. It is streamed from the test server, so
+        // this also covers a graphical guest on an image that is never copied
+        // into the browser storage.
+        const url = `http://127.0.0.1:${running.port}/build/emulator-tests/long-mode-gfx-test.iso`;
+        await page.evaluate(async (image_url) => {
+            window.OpenxISO.state.machines[0].media.hda = null;
+            await window.OpenxISO.attach_url("cdrom", image_url);
+            await window.OpenxISO.save_machine(window.OpenxISO.state.machines[0]);
+        }, url);
+        assert.equal(await page.evaluate(() =>
+            window.OpenxISO.state.machines[0].media.cdrom.storage), "url");
+
+        await click_when_enabled(page, "#btn-start");
+        await wait_for(page, "the machine to run", () => {
+            const machine = window.OpenxISO.state.machine;
+            return !!machine && machine.status === "running";
+        }, 60000, diagnose);
+
+        const serial = await wait_for(page, "the graphics guest", () => {
+            const text = window.OpenxISO.serial_text();
+            return text.split("v86-64 test: done").length > 4 ? text : false;
+        }, 120000, diagnose);
+        assert.match(serial, /pci bar0=e0000008/);
+        assert.match(serial, /framebuffer at 00000000e0000000/);
+        assert.match(serial, /framebuffer read back 0000000000ff0000,000000000000ff00,00000000000000ff/);
+        assert.match(serial, /graphics ok 640x480x32/);
+
+        // and the emulated screen has to be 640x480 with those very bands
+        const screen = await wait_for(page, "the graphical screen to appear", () => {
+            const canvas = document.querySelector("#screen_container canvas");
+            if (!canvas || canvas.width !== 640 || canvas.height !== 480) {
+                return false;
+            }
+            const context = canvas.getContext("2d");
+            const pixel = (x, y) => Array.from(context.getImageData(x, y, 1, 1).data);
+            return {
+                size: [canvas.width, canvas.height],
+                visible: getComputedStyle(canvas).display !== "none",
+                top: pixel(320, 40),
+                middle: pixel(320, 240),
+                bottom: pixel(320, 440),
+                status: document.getElementById("status-screen").textContent,
+            };
+        }, 30000, diagnose);
+
+        assert.deepEqual(screen.size, [640, 480]);
+        assert.equal(screen.visible, true, "the canvas is not hidden");
+        assert.deepEqual(screen.top.slice(0, 3), [255, 0, 0], "the first band is red");
+        assert.deepEqual(screen.middle.slice(0, 3), [0, 255, 0], "the second band is green");
+        assert.deepEqual(screen.bottom.slice(0, 3), [0, 0, 255], "the third band is blue");
+        assert.match(screen.status, /640/);
     });
 
     await test("the machine survives a reload of the page", async () => {

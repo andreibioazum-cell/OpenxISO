@@ -5,17 +5,22 @@ The tests boot these images through the emulator, so they exercise the whole
 stack: SeaBIOS, the emulated IDE/ATA controller, the media backend that streams
 the image (a file, a Blob, or a plain buffer) and the 64-bit CPU.
 
-Two images are produced in build/emulator-tests/:
+Three images are produced in build/emulator-tests/:
 
-  long-mode-test.iso  ISO9660 with an El Torito (no emulation) entry that boots
-                      emulator/tests/boot64.S. The ISO is assembled here, byte by
-                      byte, so no mkisofs/xorriso is needed.
-  long-mode-test.hdd  64 MiB raw disk image whose MBR is the same code; the rest
-                      of the program is read from the disk with INT 13h, which
-                      makes the test cover the hard disk path as well.
+  long-mode-test.iso      ISO9660 with an El Torito (no emulation) entry that
+                          boots emulator/tests/boot64.S. The ISO is assembled
+                          here, byte by byte, so no mkisofs/xorriso is needed.
+  long-mode-test.hdd      64 MiB raw disk image whose MBR is the same code; the
+                          rest of the program is read from the disk with INT 13h,
+                          which makes the test cover the hard disk path as well.
+  long-mode-gfx-test.iso  the same program built with WITH_GRAPHICS=1, which
+                          programs the Bochs VBE interface into 640x480x32 and
+                          draws three colour bands into the linear framebuffer.
 
 boot64.S switches the CPU to 64-bit long mode, prints over COM1 (the tests
-assert on that output), writes to the VGA text buffer and beeps the speaker.
+assert on that output), writes to the VGA text buffer, beeps the speaker and -
+in the interrupt build - installs an IDT, programs the PIT and the PS/2
+controller so that keyboard and mouse interrupts reach the 64-bit guest.
 
 Usage: python3 emulator/tests/make_test_images.py [--out DIR]
 """
@@ -40,8 +45,13 @@ MAGIC = 0x0BADC0DE
 HDD_SIZE = 64 * 1024 * 1024
 
 
-def build_boot_binary(out_dir):
-    """Assemble boot64.S into a flat binary that is linked for 0x7c00."""
+def build_boot_binary(out_dir, defines=()):
+    """Assemble boot64.S into a flat binary that is linked for 0x7c00.
+
+    ``defines`` are preprocessor flags such as ``-DWITH_GRAPHICS=1``, which is
+    how the graphical variant of the test program is built out of the same
+    source.
+    """
     asm = shutil.which("as")
     ld = shutil.which("ld")
     if not asm or not ld:
@@ -50,11 +60,11 @@ def build_boot_binary(out_dir):
     # boot64.S uses the C preprocessor for its constants, so preprocess it
     # first (cpp comes with gcc, clang can do it as well).
     if shutil.which("cpp"):
-        preprocess = ["cpp", "-P", SOURCE]
+        preprocess = ["cpp", "-P"] + list(defines) + [SOURCE]
     elif shutil.which("clang"):
-        preprocess = ["clang", "-E", "-P", "-x", "assembler-with-cpp", SOURCE]
+        preprocess = ["clang", "-E", "-P", "-x", "assembler-with-cpp"] + list(defines) + [SOURCE]
     elif shutil.which("cc"):
-        preprocess = ["cc", "-E", "-P", "-x", "assembler-with-cpp", SOURCE]
+        preprocess = ["cc", "-E", "-P", "-x", "assembler-with-cpp"] + list(defines) + [SOURCE]
     else:
         raise SystemExit("error: a C preprocessor (cpp/clang/cc) is required")
 
@@ -281,18 +291,25 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         boot_image = build_boot_binary(tmp)
+        gfx_image = build_boot_binary(tmp, ["-DWITH_GRAPHICS=1", "-DWITH_IRQ=0"])
 
     iso_path = os.path.join(args.out, "long-mode-test.iso")
     hdd_path = os.path.join(args.out, "long-mode-test.hdd")
+    gfx_path = os.path.join(args.out, "long-mode-gfx-test.iso")
     blocks = build_iso(boot_image, iso_path)
     hdd_size = build_hdd(boot_image, hdd_path)
+    gfx_blocks = build_iso(gfx_image, gfx_path)
 
-    print("boot64.bin      %6d bytes" % len(boot_image))
-    print("long-mode-test.iso  %6d bytes (%d blocks)  sha256 %s"
+    print("boot64.bin           %6d bytes" % len(boot_image))
+    print("boot64-gfx.bin       %6d bytes" % len(gfx_image))
+    print("long-mode-test.iso   %6d bytes (%d blocks)  sha256 %s"
           % (blocks * BLOCK, blocks, checksum(iso_path)))
-    print("long-mode-test.hdd  %6d bytes  sha256 %s"
+    print("long-mode-test.hdd   %6d bytes  sha256 %s"
           % (hdd_size, checksum(hdd_path)))
+    print("long-mode-gfx-test.iso %6d bytes (%d blocks)  sha256 %s"
+          % (gfx_blocks * BLOCK, gfx_blocks, checksum(gfx_path)))
     print("sha256 of boot64.bin: %s" % hashlib.sha256(boot_image).hexdigest())
+    print("sha256 of boot64-gfx.bin: %s" % hashlib.sha256(gfx_image).hexdigest())
 
 
 if __name__ == "__main__":
