@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="OpenxISO">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2c6ecb"/>
+      <stop offset="1" stop-color="#173a6b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect x="96" y="120" width="320" height="216" rx="18" fill="none" stroke="#ffffff" stroke-width="16"/>
+  <path d="M256 336v48" stroke="#ffffff" stroke-width="16"/>
+  <path d="M176 400h160" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+  <text x="256" y="256" text-anchor="middle" font-family="monospace" font-size="122" font-weight="700" fill="#ffffff">64</text>
+</svg>

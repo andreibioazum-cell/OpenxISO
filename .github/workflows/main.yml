@@ -1,4 +1,4 @@
-name: Build Cubic Battle 4 (Pure C)
+name: Build OpenxISO
 
 on:
   push:
@@ -34,6 +34,14 @@ jobs:
           test ! -e native
           grep -q 'android:name="com.cb4.GameActivity"' platform/android/AndroidManifest.xml
           grep -q 'android:value="cb_game"' platform/android/AndroidManifest.xml
+          grep -q 'android:name="com.cb4.EmulatorActivity"' platform/android/AndroidManifest.xml
+          test -f emulator/index.html
+          test -f emulator/js/app.js
+          test -f emulator/vendor/v86_64/libv86.mjs
+          test -f emulator/vendor/v86_64/v86.wasm
+          test -f emulator/vendor/v86_64/seabios.bin
+          test -f platform/android/java/com/cb4/EmulatorActivity.java
+          test -f platform/android/java/com/cb4/EmulatorServer.java
           grep -q 'android:versionCode="[0-9]\+"' platform/android/AndroidManifest.xml
           grep -q '^package com.cb4;' platform/android/java/com/cb4/GameActivity.java
           grep -q 'Java_com_cb4_GameActivity_nativeReplaceText' src/platform/android/keyboard.inc
@@ -43,6 +51,14 @@ jobs:
             echo "::error::The C port must not contain script sources"
             exit 1
           fi
+
+      - name: Check the emulator web application
+        run: |
+          set -euo pipefail
+          python3 tools/check_emulator.py
+          node emulator/tests/unit_test.mjs
+          python3 emulator/tests/make_test_images.py
+          node emulator/tests/boot_test.mjs
 
       - name: Check native game sources
         run: |
@@ -100,6 +116,20 @@ jobs:
       - name: Stage assets
         run: python3 stage_assets.py assets staging/assets
 
+      # The emulator is a web application: it is shipped in the APK as assets
+      # and served by platform/android/java/com/cb4/EmulatorServer.java, so the
+      # user sees exactly the same app in the Android build as in a browser.
+      - name: Stage the emulator
+        run: |
+          set -euo pipefail
+          rm -rf staging/emulator
+          mkdir -p staging/emulator
+          for item in index.html manifest.webmanifest sw.js css js icons vendor; do
+            cp -r "emulator/$item" staging/emulator/
+          done
+          du -sh staging/emulator
+          find staging/emulator -name '*.wasm' -o -name '*.bin' | sort
+
       - name: Build native libraries
         env:
           NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
@@ -154,6 +184,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Cubic-Battle-4-Full-C-APK
+          name: OpenxISO-APK
           path: Game.apk
           if-no-files-found: error

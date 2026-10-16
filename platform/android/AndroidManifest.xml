@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cb4"
-    android:versionCode="3"
-    android:versionName="1.1">
+    android:versionCode="4"
+    android:versionName="2.0">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -18,12 +18,24 @@
         android:required="false" />
 
     <application
-        android:label="Cubic Battle 4"
+        android:label="OpenxISO"
         android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
         android:extractNativeLibs="true"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
+        <!-- The emulator: an x86-64 virtual machine in a WebView, see
+             platform/android/java/com/cb4/EmulatorActivity.java -->
+        <activity
+            android:name="com.cb4.EmulatorActivity"
+            android:configChanges="orientation|keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|navigation|uiMode|density|fontScale|layoutDirection|locale"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
         <activity
             android:name="com.cb4.GameActivity"
             android:configChanges="orientation|keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|navigation|uiMode|density|fontScale|layoutDirection|locale"
@@ -33,10 +45,6 @@
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="cb_game" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
         <service
             android:name="com.cb4.PresenceJobService"

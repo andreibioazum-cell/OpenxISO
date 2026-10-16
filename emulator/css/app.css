@@ -1,0 +1,1030 @@
+/*
+ * OpenxISO: a VirtualBox-like look for a web based emulator.
+ *
+ * The window has the same three zones as the VirtualBox manager — a machine
+ * list on the left, the machine's properties and its screen in the middle and
+ * a status bar at the bottom — and the dialogs borrow its title bar, tabs and
+ * buttons. Everything is sized in a way that also works on a phone: the layout
+ * collapses to one column and the controls stay big enough for a finger.
+ */
+
+:root {
+    --bg: #eceff3;
+    --panel: #f7f8fa;
+    --panel-border: #c8ccd4;
+    --window: #ffffff;
+    --text: #1f2430;
+    --muted: #616a7d;
+    --accent: #2c6ecb;
+    --accent-text: #ffffff;
+    --danger: #c0392b;
+    --ok: #1e8449;
+    --toolbar: #e3e6ec;
+    --shadow: 0 8px 30px rgba(20, 25, 40, .18);
+    --radius: 8px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #14171d;
+        --panel: #1b1f27;
+        --panel-border: #2d3340;
+        --window: #20242d;
+        --text: #e7eaf0;
+        --muted: #9aa3b4;
+        --accent: #4b8ef0;
+        --toolbar: #232833;
+        --shadow: 0 8px 30px rgba(0, 0, 0, .5);
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 100%;
+}
+
+/* ------------------------------------------------------------------ menubar */
+
+.menubar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--panel-border);
+    flex-wrap: wrap;
+}
+
+.brand {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.brand-mark {
+    color: var(--accent);
+    font-size: 18px;
+}
+
+.brand-tag {
+    font: 11px/1 var(--mono);
+    color: var(--accent-text);
+    background: var(--accent);
+    border-radius: 999px;
+    padding: 3px 7px;
+    align-self: center;
+}
+
+.menubar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+.button {
+    font: inherit;
+    color: var(--text);
+    background: var(--window);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.button:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.button:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+}
+
+.button.danger {
+    color: var(--danger);
+}
+
+.button.small {
+    padding: 4px 9px;
+    font-size: 13px;
+}
+
+.button.icon {
+    padding: 4px 8px;
+    font-size: 12px;
+    min-width: 34px;
+}
+
+/* --------------------------------------------------------------- app layout */
+
+.app {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.panel-title {
+    padding: 8px 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.machine-list {
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.machine-entry {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--panel-border);
+    cursor: pointer;
+}
+
+.machine-entry:hover {
+    background: var(--window);
+}
+
+.machine-entry.selected {
+    background: var(--accent);
+    color: var(--accent-text);
+}
+
+.machine-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: var(--window);
+    color: var(--accent);
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    flex: none;
+}
+
+.machine-entry.selected .machine-icon {
+    background: rgba(255, 255, 255, .2);
+    color: var(--accent-text);
+}
+
+.machine-icon.running {
+    background: var(--ok);
+    color: #fff;
+}
+
+.machine-text {
+    min-width: 0;
+}
+
+.machine-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.machine-sub {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.machine-entry.selected .machine-sub {
+    color: rgba(255, 255, 255, .85);
+}
+
+.workspace {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+    overflow: auto;
+}
+
+.details {
+    padding: 14px;
+}
+
+.details h2 {
+    margin: 0 0 10px;
+    font-size: 20px;
+}
+
+.details-empty {
+    max-width: 640px;
+}
+
+.details-empty h2 {
+    font-size: 26px;
+}
+
+.details-error {
+    color: var(--danger);
+}
+
+.properties {
+    border-collapse: collapse;
+    margin-bottom: 14px;
+    max-width: 100%;
+}
+
+.properties th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 3px 16px 3px 0;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.properties td {
+    padding: 3px 0;
+    word-break: break-word;
+}
+
+.details-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- vm window */
+
+.vm-window {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+    margin: 0 14px 14px;
+    background: var(--window);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.vm-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--toolbar);
+    border-bottom: 1px solid var(--panel-border);
+    flex-wrap: wrap;
+}
+
+.vm-title {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.vm-titlebar-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+#screen_container {
+    position: relative;
+    flex: 1;
+    min-height: 260px;
+    background: #000;
+    overflow: hidden;
+    touch-action: none;
+    cursor: default;
+}
+
+#screen_container .screen-scale {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: top left;
+    will-change: transform;
+}
+
+#screen_container canvas,
+#screen_container .text-screen {
+    display: block;
+    background: #000;
+}
+
+#screen_container .text-screen {
+    width: max-content;
+}
+
+#screen_container .text-screen {
+    white-space: pre;
+    font: 14px/14px var(--mono);
+    color: #cfd3dc;
+    display: none;
+}
+
+#screen_container canvas {
+    display: none;
+    image-rendering: pixelated;
+}
+
+#screen_container .screen-capture {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+#screen_container .screen-capture[hidden] {
+    display: none;
+}
+
+.capture-hint {
+    margin-top: 12px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, .65);
+    color: #fff;
+    font-size: 13px;
+    max-width: 90%;
+    text-align: center;
+}
+
+.screen-capture.locked .capture-hint {
+    background: rgba(30, 132, 73, .8);
+}
+
+.screen-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    text-align: center;
+    color: #8b93a3;
+    gap: 4px;
+    pointer-events: none;
+}
+
+.screen-empty .hint {
+    font-size: 13px;
+}
+
+/* ------------------------------------------------------------ serial panel */
+
+.serial-panel {
+    border-top: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    max-height: 40%;
+}
+
+.serial-output {
+    margin: 0;
+    padding: 8px 10px;
+    overflow: auto;
+    font: 12px/1.35 var(--mono);
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: #0b0d11;
+    color: #d7dbe4;
+    min-height: 120px;
+    flex: 1;
+}
+
+.serial-controls {
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px;
+    border-top: 1px solid var(--panel-border);
+    flex-wrap: wrap;
+}
+
+.serial-controls .input {
+    flex: 1;
+    min-width: 140px;
+}
+
+/* --------------------------------------------------------- onscreen keyboard */
+
+.osk-panel {
+    border-top: 1px solid var(--panel-border);
+    background: var(--panel);
+    padding: 6px;
+    overflow-x: auto;
+}
+
+.osk-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.osk-key {
+    flex: 1 1 0;
+    min-width: 34px;
+    height: 40px;
+    font: 14px var(--mono);
+    color: var(--text);
+    background: var(--window);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.osk-key.wide {
+    flex: 1.6 1 0;
+}
+
+.osk-key.extra-wide {
+    flex: 5 1 0;
+}
+
+.osk-key.modifier.active {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+}
+
+/* -------------------------------------------------------------- drop overlay */
+
+.drop-overlay {
+    position: absolute;
+    inset: 10px;
+    border: 3px dashed var(--accent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    display: none;
+    place-content: center;
+    font-size: 18px;
+    color: var(--text);
+    text-align: center;
+    pointer-events: none;
+}
+
+.drop-overlay.visible {
+    display: grid;
+}
+
+/* --------------------------------------------------------------- status bar */
+
+.statusbar {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 4px 10px;
+    background: var(--panel);
+    border-top: 1px solid var(--panel-border);
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.status-cell {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.status-cell.grow {
+    flex: 1;
+}
+
+.status-cell.right {
+    justify-content: flex-end;
+    color: var(--muted);
+}
+
+.status-label {
+    color: var(--muted);
+}
+
+.status-value {
+    font-weight: 600;
+}
+
+.state-state_running {
+    color: var(--ok);
+}
+
+.state-state_error {
+    color: var(--danger);
+}
+
+.led {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--panel-border);
+    display: inline-block;
+}
+
+.led.active {
+    background: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+}
+
+/* ----------------------------------------------------------------- dialogs */
+
+.dialog {
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    background: var(--window);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    padding: 0;
+    width: min(560px, 94vw);
+    max-height: 90dvh;
+    overflow: hidden;
+}
+
+.dialog.wide {
+    width: min(880px, 96vw);
+}
+
+.dialog::backdrop {
+    background: rgba(10, 12, 18, .45);
+}
+
+.dialog-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--toolbar);
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.dialog-title {
+    font-weight: 600;
+    flex: 1;
+}
+
+.dialog-close {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.dialog-body {
+    padding: 12px 14px;
+    overflow: auto;
+    max-height: calc(90dvh - 120px);
+}
+
+.dialog-footer {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 10px 14px;
+    border-top: 1px solid var(--panel-border);
+    background: var(--panel);
+    flex-wrap: wrap;
+}
+
+.dialog-text {
+    margin: 0 0 6px;
+}
+
+/* -------------------------------------------------------------------- forms */
+
+.field {
+    display: block;
+    margin-bottom: 12px;
+}
+
+.field-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.field-hint {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.field-hint.warning {
+    color: var(--danger);
+}
+
+.input {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+select.input {
+    min-width: 220px;
+}
+
+.checkbox {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+
+.page-row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.range {
+    flex: 1;
+    accent-color: var(--accent);
+}
+
+.range-value {
+    font: 12px var(--mono);
+    color: var(--muted);
+    min-width: 42px;
+}
+
+.engine-info {
+    margin-top: 12px;
+    padding: 8px 10px;
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.engine-info p {
+    margin: 4px 0 0;
+    color: var(--muted);
+}
+
+/* ------------------------------------------------------------------- tabs */
+
+.tabbar {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--panel-border);
+    margin-bottom: 12px;
+    overflow-x: auto;
+}
+
+.tab {
+    font: inherit;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background: none;
+    color: var(--muted);
+    padding: 6px 12px;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.tab.active {
+    background: var(--panel);
+    border-color: var(--panel-border);
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* ------------------------------------------------------------- media rows */
+
+.media-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.media-details {
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--panel);
+}
+
+.media-head {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.media-kind {
+    font-weight: 600;
+    min-width: 120px;
+}
+
+.media-name {
+    color: var(--muted);
+    word-break: break-all;
+}
+
+.media-name.empty {
+    font-style: italic;
+}
+
+.media-buttons {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- snapshots */
+
+.snapshot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.snapshot-entry {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--panel);
+    flex-wrap: wrap;
+}
+
+.snapshot-text {
+    flex: 1;
+    min-width: 140px;
+}
+
+.snapshot-name {
+    font-weight: 600;
+}
+
+.snapshot-sub {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.snapshot-buttons {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------ wizard */
+
+.wizard-step {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin: 10px 0 6px;
+}
+
+.wizard-nav {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+/* ------------------------------------------------------------------ toasts */
+
+#toasts {
+    position: fixed;
+    bottom: 46px;
+    right: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 50;
+    max-width: min(420px, 92vw);
+}
+
+.toast {
+    background: var(--window);
+    border: 1px solid var(--panel-border);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    padding: 8px 12px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .2s, transform .2s;
+    font-size: 13px;
+}
+
+.toast.visible {
+    opacity: 1;
+    transform: none;
+}
+
+.toast.error {
+    border-left-color: var(--danger);
+}
+
+.toast.success {
+    border-left-color: var(--ok);
+}
+
+.empty-hint {
+    padding: 12px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ------------------------------------------------------------------- phone */
+
+@media (max-width: 900px) {
+    .menubar {
+        gap: 8px;
+        padding: 6px 8px;
+    }
+
+    .brand-tag {
+        display: none;
+    }
+
+    /* one scrolling row of buttons instead of three wrapped ones */
+    .menubar-actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        width: 100%;
+        margin-left: 0;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+    }
+
+    .menubar-actions::-webkit-scrollbar {
+        display: none;
+    }
+
+    .app {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--panel-border);
+        max-height: 22dvh;
+    }
+
+    /* the properties are a summary on a phone, the screen is the point */
+    .details {
+        padding: 10px;
+        max-height: 30dvh;
+        overflow: auto;
+    }
+
+    .details h2 {
+        font-size: 17px;
+        margin-bottom: 6px;
+    }
+
+    .properties th,
+    .properties td {
+        padding: 2px 10px 2px 0;
+        font-size: 13px;
+    }
+
+    /* the whole page scrolls, and the guest screen keeps a usable size */
+    .workspace {
+        display: block;
+    }
+
+    .vm-window {
+        margin: 0 8px 8px;
+        position: relative;
+        min-height: 0;
+    }
+
+    #screen_container {
+        aspect-ratio: 4 / 3;
+        min-height: 200px;
+        flex: none;
+    }
+
+    /* the keyboard and the console are overlays on a phone: they must not
+       squeeze the guest screen down to nothing */
+    .osk-panel,
+    .serial-panel {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 6;
+        max-height: 55%;
+        overflow: auto;
+        box-shadow: 0 -6px 20px rgba(0, 0, 0, .35);
+        background: var(--panel);
+    }
+
+    .statusbar {
+        gap: 10px;
+    }
+
+    .statusbar .status-cell:not(:first-child):not(.grow) {
+        display: none;
+    }
+
+    /* the keyboard and the console are overlays on the guest screen, so the
+       keys have to stay small enough to leave the screen visible */
+    .osk-key {
+        height: 34px;
+        min-width: 24px;
+        font-size: 12px;
+    }
+
+    .osk-panel {
+        max-height: 48%;
+    }
+
+    .serial-panel {
+        max-height: 45%;
+    }
+}
+
+@media (max-width: 480px) {
+    .menubar-actions .button {
+        padding: 6px 9px;
+        font-size: 13px;
+    }
+
+    .vm-titlebar-actions .button {
+        flex: 1 1 auto;
+    }
+}

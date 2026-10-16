@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>OpenxISO — эмулятор x86-64</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Эмулятор ПК с поддержкой 64-битного режима: запускает ISO и образы дисков прямо в браузере.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="OpenxISO">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="menubar">
+    <div class="brand">
+        <span class="brand-mark" aria-hidden="true">▣</span>
+        <span class="brand-name" data-i18n="app_name">OpenxISO</span>
+        <span class="brand-tag">x86-64</span>
+    </div>
+    <div class="menubar-actions">
+        <button class="button primary" id="btn-start" type="button" data-i18n="start">Запустить</button>
+        <button class="button" id="btn-pause" type="button" data-i18n="pause">Пауза</button>
+        <button class="button" id="btn-reset" type="button" data-i18n="reset">Сброс</button>
+        <button class="button" id="btn-stop" type="button" data-i18n="stop">Выключить</button>
+        <button class="button" id="btn-suspend" type="button" data-i18n="suspend">Сохранить состояние</button>
+        <button class="button" id="btn-new" type="button" data-i18n="new_machine">Новая</button>
+        <button class="button" id="btn-settings" type="button" data-i18n="settings">Настройки</button>
+        <button class="button" id="btn-snapshots" type="button" data-i18n="snapshots">Снимки</button>
+        <button class="button icon" id="btn-language" type="button" title="Русский / English">RU</button>
+    </div>
+</header>
+
+<main class="app">
+    <aside class="sidebar">
+        <div class="panel-title" data-i18n="machinelist">Машины</div>
+        <div class="machine-list" id="machine-list"></div>
+    </aside>
+
+    <section class="workspace" id="workspace">
+        <div class="details" id="machine-details"></div>
+
+        <div class="vm-window">
+            <div class="vm-titlebar">
+                <span class="vm-title">Экран гостевой системы</span>
+                <div class="vm-titlebar-actions">
+                    <button class="button small" id="btn-scale" type="button">Вписать в окно</button>
+                    <button class="button small" id="btn-fullscreen" type="button" data-i18n="fullscreen">Во весь экран</button>
+                    <button class="button small" id="btn-ctrl-alt-del" type="button">Ctrl+Alt+Del</button>
+                    <button class="button small" id="btn-keyboard" type="button" data-i18n="keyboard">Клавиатура</button>
+                    <button class="button small" id="btn-mouse" type="button" data-i18n="mouse_captured">Мышь</button>
+                    <button class="button small" id="btn-paste" type="button" data-i18n="paste">Вставить текст</button>
+                    <button class="button small" id="btn-serial" type="button" data-i18n="serial_console">Консоль COM1</button>
+                    <button class="button small" id="btn-screenshot" type="button" data-i18n="screenshot">Снимок экрана</button>
+                </div>
+            </div>
+
+            <div id="screen_container">
+                <!-- v86 renders into the first <div> and the <canvas> it finds
+                     here; the <section> around them is what scales the guest
+                     screen into the window -->
+                <section class="screen-scale" id="screen-scale">
+                    <div class="text-screen"></div>
+                    <canvas></canvas>
+                </section>
+                <div class="screen-capture" hidden>
+                    <div class="capture-hint" id="capture-hint" data-i18n="capture_hint">
+                        Нажмите на экран, чтобы захватить мышь
+                    </div>
+                    <div class="capture-mouse" title="Мышь захвачена"></div>
+                </div>
+                <div class="screen-empty" id="screen-empty">
+                    <p data-i18n="no_screen_yet">Экран ещё не активен</p>
+                    <p class="hint" data-i18n="host_hint">Управление как в VirtualBox: слева машины, сверху кнопки питания.</p>
+                </div>
+            </div>
+
+            <div class="osk-panel hidden" id="osk-panel"></div>
+
+            <div class="serial-panel hidden" id="serial-panel">
+                <div class="panel-title" data-i18n="serial_console">Консоль COM1</div>
+                <pre class="serial-output" id="serial-output" tabindex="0"></pre>
+                <div class="serial-controls">
+                    <input class="input" id="serial-input" type="text" autocomplete="off"
+                           data-i18n-placeholder="serial_placeholder" placeholder="введите текст и нажмите Enter…">
+                    <button class="button small" id="serial-send" type="button" data-i18n="serial_send">Отправить</button>
+                    <button class="button small" id="serial-clear" type="button" data-i18n="serial_clear">Очистить</button>
+                    <button class="button small" id="serial-download" type="button" data-i18n="serial_download">Скачать журнал</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="drop-overlay" id="drop-overlay" data-i18n="drop_hint">
+            Перетащите файл .iso или .hdd сюда
+        </div>
+    </section>
+</main>
+
+<footer class="statusbar">
+    <div class="status-cell">
+        <span class="status-label" data-i18n="activity">Активность</span>
+        <span class="status-value" id="status-state">Выключена</span>
+        <span class="led" id="activity-disk" title="Диск"></span>
+        <span class="led" id="activity-audio" title="Звук"></span>
+    </div>
+    <div class="status-cell"><span class="status-label" data-i18n="machinelist">Машина</span>
+        <span class="status-value" id="status-machine">—</span></div>
+    <div class="status-cell"><span class="status-label" data-i18n="memory">Память</span>
+        <span class="status-value" id="status-memory">—</span></div>
+    <div class="status-cell"><span class="status-label" data-i18n="media">Носители</span>
+        <span class="status-value" id="status-media">—</span></div>
+    <div class="status-cell"><span class="status-label" data-i18n="resolution">Экран</span>
+        <span class="status-value" id="status-screen">—</span></div>
+    <div class="status-cell"><span class="status-label" data-i18n="stat_read">Чтение образов</span>
+        <span class="status-value" id="status-read">—</span></div>
+    <div class="status-cell"><span class="status-label" data-i18n="stat_instructions">Инструкции</span>
+        <span class="status-value" id="status-instructions">—</span></div>
+    <div class="status-cell"><span class="status-label">Время</span>
+        <span class="status-value" id="status-uptime">—</span></div>
+    <div class="status-cell grow right"><span class="status-value" id="status-storage"></span></div>
+</footer>
+
+<div id="toasts"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

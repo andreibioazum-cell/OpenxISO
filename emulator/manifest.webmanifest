@@ -1,0 +1,31 @@
+{
+    "name": "OpenxISO — эмулятор x86-64",
+    "short_name": "OpenxISO",
+    "description": "Эмулятор персонального компьютера с поддержкой 64-битного режима: запускает ISO и образы дисков из памяти телефона.",
+    "lang": "ru",
+    "dir": "ltr",
+    "start_url": "./index.html",
+    "scope": "./",
+    "id": "openxiso",
+    "display": "standalone",
+    "display_override": ["fullscreen", "standalone"],
+    "orientation": "any",
+    "background_color": "#14171d",
+    "theme_color": "#2c6ecb",
+    "categories": ["utilities", "developer", "productivity"],
+    "icons": [
+        { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+        { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+        { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    ],
+    "file_handlers": [
+        {
+            "action": "./index.html",
+            "accept": {
+                "application/x-iso9660-image": [".iso"],
+                "application/octet-stream": [".hdd", ".img", ".raw", ".ima", ".flp"]
+            }
+        }
+    ]
+}
