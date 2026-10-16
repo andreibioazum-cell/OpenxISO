@@ -15,6 +15,7 @@
  *     --port N        port to listen on (default 8080, 0 picks a free one)
  *     --host HOST     address to bind (default 0.0.0.0)
  *     --no-root       only serve the emulator directory
+ *     --isolate       send COOP/COEP headers (cross origin isolation)
  */
 
 import fs from "node:fs";
@@ -54,6 +55,7 @@ const MIME_TYPES = {
 export async function serve(options = {}) {
     const roots = options.roots || [here, repo];
     const quiet = options.quiet === true;
+    const isolate = options.isolate === true;
 
     const server = http.createServer(async (request, response) => {
         const requested = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
@@ -95,11 +97,15 @@ export async function serve(options = {}) {
             "content-type": type,
             "cache-control": "no-cache",
             "accept-ranges": "bytes",
-            // a WebAssembly application wants to be able to use SharedArrayBuffer
-            "cross-origin-opener-policy": "same-origin",
-            "cross-origin-embedder-policy": "require-corp",
-            "cross-origin-resource-policy": "same-origin",
         };
+        if (isolate) {
+            // Cross origin isolation (SharedArrayBuffer) is not needed by the
+            // emulator, and it stops the page from being embedded in a frame
+            // that is not isolated itself, so it is off unless asked for.
+            headers["cross-origin-opener-policy"] = "same-origin";
+            headers["cross-origin-embedder-policy"] = "require-corp";
+            headers["cross-origin-resource-policy"] = "same-origin";
+        }
 
         const range = request.headers.range;
         if (range) {
@@ -167,6 +173,7 @@ function parse_args(argv) {
             case "--port": options.port = parseInt(argv[++i], 10); break;
             case "--host": options.host = argv[++i]; break;
             case "--no-root": options.roots = [here]; break;
+            case "--isolate": options.isolate = true; break;
             case "--quiet": options.quiet = true; break;
             default: throw new Error("unknown option: " + argv[i]);
         }

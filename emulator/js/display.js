@@ -116,7 +116,12 @@ export class Display {
         }, 250));
     }
 
-    /** The virtual mouse moves the guest pointer with relative movements. */
+    /**
+     * The virtual mouse moves the guest pointer with relative movements. When
+     * it is off the touch gestures are left to the browser: a zoomed in screen
+     * can then be panned with a finger, and a tap on the screen only tries to
+     * capture the mouse (see the mousedown handler).
+     */
     bind_touch() {
         let last_x = 0;
         let last_y = 0;
@@ -128,7 +133,7 @@ export class Display {
         const point = touch => ({ x: touch.clientX, y: touch.clientY });
 
         this.container.addEventListener("touchstart", event => {
-            if (!this.machine) {
+            if (!this.machine || !this.virtual_mouse) {
                 return;
             }
             if (event.touches.length > 1) {
@@ -153,7 +158,7 @@ export class Display {
         }, { passive: false });
 
         this.container.addEventListener("touchmove", event => {
-            if (!this.machine || multi_touch || !event.touches.length) {
+            if (!this.machine || !this.virtual_mouse || multi_touch || !event.touches.length) {
                 return;
             }
             const position = point(event.touches[0]);
@@ -171,6 +176,9 @@ export class Display {
         }, { passive: false });
 
         this.container.addEventListener("touchend", event => {
+            if (!this.virtual_mouse) {
+                return;
+            }
             if (long_press_timer) {
                 clearTimeout(long_press_timer);
                 long_press_timer = null;

@@ -346,9 +346,16 @@ body {
     flex: 1;
     min-height: 260px;
     background: #000;
+    /* a screen that is zoomed in (1:1 or 2:1) can be panned with a finger;
+       with the virtual mouse on, the gestures belong to the guest */
+    overflow: auto;
+    touch-action: pan-x pan-y;
+    cursor: default;
+}
+
+#screen_container.virtual-mouse {
     overflow: hidden;
     touch-action: none;
-    cursor: default;
 }
 
 #screen_container .screen-scale {
